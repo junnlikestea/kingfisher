@@ -1,18 +1,18 @@
 use std::{
     fs,
-    io::Read,
+    io::{BufReader, Read},
     path::{Component, Path, PathBuf},
 };
 
 use anyhow::Result;
 use asar::AsarReader;
-use bzip2::read::BzDecoder;
+use bzip2_rs::DecoderReader;
 use flate2::read::{GzDecoder, ZlibDecoder};
+use lzma_rs::xz_decompress;
 use memmap2::Mmap;
 use tar::Archive;
 use tempfile::{tempdir, TempDir};
 use uuid::Uuid;
-use xz2::read::XzDecoder;
 use zip::ZipArchive;
 
 /// Formats that are basically a ZIP container.
@@ -184,6 +184,17 @@ fn stream_to_file<R: Read>(mut decoder: R, out_path: &Path) -> Result<Compressed
     Ok(CompressedContent::RawFile(out_path.to_owned()))
 }
 
+fn stream_xz_to_file(path: &Path, out_path: &Path) -> Result<CompressedContent> {
+    if !is_safe_extract_path(out_path) {
+        anyhow::bail!("unsafe path during decompression: {}", out_path.display());
+    }
+    let input = fs::File::open(path)?;
+    let mut reader = BufReader::new(input);
+    let mut out_file = fs::File::create(out_path)?;
+    xz_decompress(&mut reader, &mut out_file)?;
+    Ok(CompressedContent::RawFile(out_path.to_owned()))
+}
+
 /* ───────────────────────────────────────────────────────────────
 one *step* of decompression
 ───────────────────────────────────────────────────────────── */
@@ -221,13 +232,12 @@ fn decompress_once(path: &Path, base_dir: Option<&Path>) -> Result<CompressedCon
             }
             "bz2" | "bzip2" => {
                 let out_path = make_output_path(path, base_dir, "decomp.tar");
-                let decoder = BzDecoder::new(fs::File::open(path)?);
+                let decoder = DecoderReader::new(fs::File::open(path)?);
                 return stream_to_file(decoder, &out_path);
             }
             "xz" => {
                 let out_path = make_output_path(path, base_dir, "decomp.tar");
-                let decoder = XzDecoder::new(fs::File::open(path)?);
-                return stream_to_file(decoder, &out_path);
+                return stream_xz_to_file(path, &out_path);
             }
             "zlib" => {
                 let out_path = make_output_path(path, base_dir, "decomp.tar");
