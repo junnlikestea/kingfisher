@@ -847,7 +847,7 @@ kingfisher scan s3 bucket-name [--prefix path/]
 
 Credential resolution happens in this order:
 
-1. `KF_AWS_KEY` and `KF_AWS_SECRET` environment variables
+1. `KF_AWS_KEY` and `KF_AWS_SECRET` environment variables (optionally `KF_AWS_SESSION_TOKEN` for temporary credentials)
 2. `--profile` pointing to a profile in `~/.aws/config` (works with AWS SSO)
 3. anonymous access for public buckets
 
@@ -1390,7 +1390,7 @@ KF_SLACK_TOKEN="xoxp-1234..." kingfisher scan slack "akia" \
 | `KF_CONFLUENCE_TOKEN` | Confluence API token      |
 | `KF_SLACK_TOKEN`  | Slack API token              |
 | `KF_DOCKER_TOKEN` | Docker registry token (`user:pass` or bearer token). If unset, credentials from the Docker keychain are used |
-| `KF_AWS_KEY` and `KF_AWS_SECRET` | AWS Credentials to use with S3 bucket scanning |
+| `KF_AWS_KEY`, `KF_AWS_SECRET`, and `KF_AWS_SESSION_TOKEN` | AWS credentials for S3 bucket scanning. Session token is optional, for temporary credentials |
 
 Set them temporarily per command:
 

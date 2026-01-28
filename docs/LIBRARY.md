@@ -27,9 +27,9 @@ Add the crates to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-kingfisher-core = { git = "https://github.com/your-org/kingfisher" }
-kingfisher-rules = { git = "https://github.com/your-org/kingfisher" }
-kingfisher-scanner = { git = "https://github.com/your-org/kingfisher" }
+kingfisher-core = { git = "https://github.com/mongodb/kingfisher" }
+kingfisher-rules = { git = "https://github.com/mongodb/kingfisher" }
+kingfisher-scanner = { git = "https://github.com/mongodb/kingfisher" }
 ```
 
 ### Basic File Scanning
