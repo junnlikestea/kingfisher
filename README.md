@@ -636,37 +636,39 @@ This is useful for:
 - Checking if a credential is still active before rotation
 - Validating secrets from external sources (password managers, ticketing systems, etc.)
 
+> **Note:** The `kingfisher.` prefix is optional for built-in rules. You can use `--rule aws` instead of `--rule kingfisher.aws`.
+
 ```bash
 # Validate an OpsGenie API key (using rule prefix matching)
-kingfisher validate --rule kingfisher.opsgenie "12345678-9abc-def0-1234-56789abcdef0"
+kingfisher validate --rule opsgenie "12345678-9abc-def0-1234-56789abcdef0"
 
 # Validate from stdin
-echo "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" | kingfisher validate --rule kingfisher.github -
+echo "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" | kingfisher validate --rule github -
 
 # JSON output for scripting
-kingfisher validate --rule kingfisher.slack "xoxb-..." --format json
+kingfisher validate --rule slack "xoxb-..." --format json
 
 # AWS credentials - use --arg to auto-assign additional values
-kingfisher validate --rule kingfisher.aws --arg AKIAIOSFODNN7EXAMPLE \
+kingfisher validate --rule aws --arg AKIAIOSFODNN7EXAMPLE \
   "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
 
-# Or use --var if you know the variable name
+# Or use --var if you know the variable name (explicit rule ID still works)
 kingfisher validate --rule kingfisher.aws.2 --var AKID=AKIAIOSFODNN7EXAMPLE \
   "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
 
 # GCP service account (pass JSON as secret)
-kingfisher validate --rule kingfisher.gcp "$(cat service-account.json)"
+kingfisher validate --rule gcp "$(cat service-account.json)"
 
 # MongoDB connection string
-kingfisher validate --rule kingfisher.mongodb.3 \
+kingfisher validate --rule mongodb.3 \
   "mongodb+srv://user:password@cluster.mongodb.net/db"
 
 # PostgreSQL connection
-kingfisher validate --rule kingfisher.postgres \
+kingfisher validate --rule postgres \
   "postgres://admin:password@db.example.com:5432/mydb"
 
 # JWT token
-kingfisher validate --rule kingfisher.jwt \
+kingfisher validate --rule jwt \
   "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
 ```
 
@@ -683,16 +685,16 @@ Some validators need more than just the secret. For example, AWS needs both an a
 
 ```bash
 # --arg auto-assigns to AKID (the only non-TOKEN variable for AWS)
-kingfisher validate --rule kingfisher.aws --arg AKIAEXAMPLE "secret_key"
+kingfisher validate --rule aws --arg AKIAEXAMPLE "secret_key"
 
 # --var for explicit assignment
-kingfisher validate --rule kingfisher.aws --var AKID=AKIAEXAMPLE "secret_key"
+kingfisher validate --rule aws --var AKID=AKIAEXAMPLE "secret_key"
 ```
 
-**Rule prefix matching:** Use partial rule IDs like `kingfisher.opsgenie` instead of the full `kingfisher.opsgenie.1`. If the prefix matches multiple rules, **all matching rules with compatible variables are tried**:
+**Rule prefix matching:** Use partial rule IDs like `opsgenie` instead of the full `kingfisher.opsgenie.1`. If the prefix matches multiple rules, **all matching rules with compatible variables are tried**:
 
 ```bash
-$ kingfisher validate --rule kingfisher.aws --arg AKIAEXAMPLE "secret_key"
+$ kingfisher validate --rule aws --arg AKIAEXAMPLE "secret_key"
 Rule:     AWS Secret Access Key (kingfisher.aws.2)
 Result:   ✓ VALID
 Response: arn:aws:iam::123456789012:user/example

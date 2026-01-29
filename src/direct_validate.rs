@@ -64,12 +64,30 @@ fn find_rules_by_selector<'a>(
 ) -> Result<Vec<&'a Rule>> {
     let mut matches: Vec<&Rule> = Vec::new();
 
-    for (id, rule) in rules {
-        // Exact match OR "selector." is a prefix of id
-        if id == selector
-            || (id.starts_with(selector) && id.as_bytes().get(selector.len()) == Some(&b'.'))
-        {
-            matches.push(rule);
+    // Try the selector as-is first, then with "kingfisher." prefix as fallback.
+    // This allows users to pass `--rule aws` instead of `--rule kingfisher.aws`.
+    let selectors_to_try: Vec<std::borrow::Cow<'_, str>> = if selector.starts_with("kingfisher.") {
+        vec![std::borrow::Cow::Borrowed(selector)]
+    } else {
+        vec![
+            std::borrow::Cow::Borrowed(selector),
+            std::borrow::Cow::Owned(format!("kingfisher.{}", selector)),
+        ]
+    };
+
+    for try_selector in &selectors_to_try {
+        for (id, rule) in rules {
+            // Exact match OR "selector." is a prefix of id
+            if id == try_selector.as_ref()
+                || (id.starts_with(try_selector.as_ref())
+                    && id.as_bytes().get(try_selector.len()) == Some(&b'.'))
+            {
+                matches.push(rule);
+            }
+        }
+        // If we matched with this selector, no need to try the fallback
+        if !matches.is_empty() {
+            break;
         }
     }
 

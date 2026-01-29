@@ -139,7 +139,7 @@ impl LoadedRules {
                     let mut matched_any = false;
 
                     for (id, rule) in &self.id_to_rule {
-                        // Exact match OR “selector.” is a prefix of id
+                        // Exact match OR "selector." is a prefix of id
                         if id == selector
                             || (id.starts_with(selector)
                                 && id.as_bytes().get(selector.len()) == Some(&b'.'))
