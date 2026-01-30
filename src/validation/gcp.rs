@@ -108,9 +108,7 @@ pub async fn revoke_gcp_service_account_key(
     }
 
     if project_id.is_empty() || client_email.is_empty() || key_id.is_empty() {
-        return Err(anyhow!(
-            "Missing required GCP fields: project_id/client_email/private_key_id"
-        ));
+        return Err(anyhow!("Missing required GCP fields: project_id/client_email/private_key_id"));
     }
 
     let ctx = validator.get_access_token_from_sa_json(gcp_json).await?;
@@ -122,18 +120,11 @@ pub async fn revoke_gcp_service_account_key(
         encode(&key_id),
     );
 
-    let response = validator
-        .client()
-        .delete(url)
-        .bearer_auth(&ctx.access_token)
-        .send()
-        .await?;
+    let response = validator.client().delete(url).bearer_auth(&ctx.access_token).send().await?;
 
     let status = response.status();
-    let body = response
-        .text()
-        .await
-        .unwrap_or_else(|e| format!("Failed to read response body: {}", e));
+    let body =
+        response.text().await.unwrap_or_else(|e| format!("Failed to read response body: {}", e));
     let message = if body.trim().is_empty() { status.to_string() } else { body };
 
     Ok(GcpRevocationOutcome {

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.77.0]
+- Added `kingfisher revoke` subcommand for revoking leaked credentials directly with the provider.
+- Added optional `revocation` section to rules to support credential revocation (currently supporting AWS, GCP, GitHub, GitLab, and Slack).
+- Added `kingfisher validate` subcommand to validate credentials without running a full scan.
+- Refactored project into multiple crates for better modularity and maintainability.
+- Ensured more CLI arguments are global and available across all subcommands.
+
 ## [v1.76.0]
 - Fixed validation deduplication for rules with nested unnamed captures (e.g. `(?<REGEX>...(ABC|DEF)...)`) to use the primary capture for grouping, ensuring each unique match triggers a separate validation request.
 - Added trace-level (`-vv`) logging for internal validation dedup keys and grouping to aid debugging.
