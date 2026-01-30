@@ -101,6 +101,7 @@ kingfisher scan /path/to/scan --access-map --view-report
       - [macOS and Linux](#macos-and-linux)
       - [Windows PowerShell](#windows-powershell)
       - [Using the `pre-commit` framework](#using-the-pre-commit-framework)
+      - [Using Husky (Node.js projects)](#using-husky-nodejs-projects)
     - [Compile](#compile)
     - [ Run Kingfisher in Docker](#-run-kingfisher-in-docker)
 - [🔐 Detection Rules at a Glance](#-detection-rules-at-a-glance)
@@ -365,12 +366,31 @@ repos:
   - repo: https://github.com/mongodb/kingfisher
     rev: <version-or-commit>
     hooks:
-      # No local install required; runs Kingfisher from Docker at the repo root
+      # Recommended: Auto-downloads and caches the binary - no manual install or Docker required
+      - id: kingfisher-auto
+
+      # Alternative: Runs Kingfisher from Docker (requires Docker)
       - id: kingfisher-docker
 
-      # Fastest when you already have Kingfisher installed locally
+      # Alternative: Uses locally installed Kingfisher (fastest, requires manual install)
       - id: kingfisher
 ```
+
+**Available hooks:**
+
+| Hook ID | Description | Requirements |
+|---------|-------------|--------------|
+| `kingfisher-auto` | Automatically downloads and caches the appropriate binary for your platform | curl, tar (or unzip on Windows) |
+| `kingfisher-docker` | Runs Kingfisher in Docker | Docker |
+| `kingfisher` | Uses locally installed Kingfisher binary | Manual installation |
+
+The `kingfisher-auto` hook is recommended for most users as it:
+- Automatically downloads the correct binary for your OS and architecture
+- Caches the binary in `~/.cache/kingfisher` (Linux/macOS) or `%LOCALAPPDATA%\kingfisher` (Windows)
+- Works across Linux, macOS, and Windows (via Git Bash which comes with Git for Windows)
+- Requires no Docker or manual installation
+
+**Windows users:** The `kingfisher-auto` hook uses a bash script that runs via Git Bash (included with [Git for Windows](https://gitforwindows.org/)). For native PowerShell, a `kingfisher-pre-commit-auto.ps1` script is also available in the `scripts/` directory.
 
 Then install the hook via `pre-commit install`. Every hook now drives Kingfisher
 directly with the built-in `--staged` flag:
@@ -392,7 +412,93 @@ scans only those staged changes.
 To trigger a hook in CI without installing to `.git/hooks`, run (for example):
 
 ```bash
-pre-commit run kingfisher-pre-commit --all-files
+pre-commit run kingfisher-auto --all-files
+```
+
+**Pin to a specific version:**
+
+To use a specific Kingfisher version with the `kingfisher-auto` hook, set the `KINGFISHER_VERSION` environment variable:
+
+```yaml
+repos:
+  - repo: https://github.com/mongodb/kingfisher
+    rev: v1.76.0
+    hooks:
+      - id: kingfisher-auto
+        # Optional: pin to a specific kingfisher binary version
+        # env:
+        #   KINGFISHER_VERSION: "1.76.0"
+```
+
+</details>
+
+#### Using Husky (Node.js projects)
+
+For Node.js projects using [Husky](https://typicode.github.io/husky/), you can add Kingfisher to your pre-commit hooks:
+
+<details>
+
+**Quick setup (recommended):**
+
+```bash
+# Initialize Husky if you haven't already
+npx husky init
+
+# Add Kingfisher to the pre-commit hook (auto-downloads binary)
+echo 'curl -fsSL https://raw.githubusercontent.com/mongodb/kingfisher/main/scripts/kingfisher-pre-commit-auto.sh | bash' >> .husky/pre-commit
+```
+
+**Or use the helper script:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mongodb/kingfisher/main/scripts/install-husky.sh | bash -s -- --auto-install
+```
+
+**Available options:**
+
+```bash
+# Use auto-download (recommended - no pre-installation needed)
+./scripts/install-husky.sh --auto-install
+
+# Use Docker (requires Docker, no binary installation)
+./scripts/install-husky.sh --use-docker
+
+# Use local binary (requires kingfisher to be installed)
+./scripts/install-husky.sh
+
+# Uninstall
+./scripts/install-husky.sh --uninstall
+```
+
+**Manual setup:**
+
+If you prefer to configure Husky manually, add one of these to your `.husky/pre-commit`:
+
+```bash
+# Option 1: Auto-download binary (recommended)
+curl -fsSL https://raw.githubusercontent.com/mongodb/kingfisher/main/scripts/kingfisher-pre-commit-auto.sh | bash
+
+# Option 2: Use Docker
+docker run --rm -v "$(pwd)":/src ghcr.io/mongodb/kingfisher:latest scan /src --staged --quiet --no-update-check
+
+# Option 3: Use locally installed binary
+kingfisher scan . --staged --quiet --no-update-check
+```
+
+**Windows with PowerShell:**
+
+For Windows users preferring native PowerShell over Git Bash, create a `.husky/pre-commit.ps1` or add to your hook:
+
+```powershell
+# Download and run the PowerShell auto-install script
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/mongodb/kingfisher/main/scripts/kingfisher-pre-commit-auto.ps1' -OutFile "$env:TEMP\kf-scan.ps1"
+& "$env:TEMP\kf-scan.ps1"
+```
+
+Or if Kingfisher is already installed:
+
+```powershell
+kingfisher scan . --staged --quiet --no-update-check
 ```
 
 </details>

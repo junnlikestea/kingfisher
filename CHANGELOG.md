@@ -8,6 +8,9 @@ All notable changes to this project will be documented in this file.
 - Added `kingfisher validate` subcommand to validate credentials without running a full scan.
 - Refactored project into multiple crates for better modularity and maintainability.
 - Ensured more CLI arguments are global and available across all subcommands.
+- Added `kingfisher-auto` pre-commit hook that automatically downloads and caches the appropriate binary for your platform (no Docker or manual installation required).
+- Added Husky integration support with `install-husky.sh` helper script and documentation for Node.js projects.
+- Added `kingfisher-pre-commit-auto.sh` and `kingfisher-pre-commit-auto.ps1` scripts for automatic binary download in Git hooks (Linux, macOS, Windows support).
 
 ## [v1.76.0]
 - Fixed validation deduplication for rules with nested unnamed captures (e.g. `(?<REGEX>...(ABC|DEF)...)`) to use the primary capture for grouping, ensuring each unique match triggers a separate validation request.
