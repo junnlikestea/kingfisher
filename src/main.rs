@@ -22,19 +22,22 @@ use std::alloc::System;
 #[global_allocator]
 static GLOBAL: System = System;
 
+// use std::alloc::System;
+// #[global_allocator]
+// static GLOBAL: System = System;
+
 use std::{
-    io::Read,
+    io::{IsTerminal, Read, Write},
     sync::{Arc, Mutex},
 };
 
 use anyhow::{Context, Result};
 use kingfisher::{
+    access_map, azure, bitbucket,
     cli::{
         self,
         commands::{
-            github::{
-                GitCloneMode, GitHistoryMode, GitHubCommand, GitHubRepoType, GitHubReposCommand,
-            },
+            github::{GitCloneMode, GitHistoryMode, GitHubRepoType},
             inputs::{ContentFilteringArgs, InputSpecifierArgs},
             output::{OutputArgs, ReportOutputFormat},
             rules::{
@@ -47,11 +50,13 @@ use kingfisher::{
     },
     findings_store,
     findings_store::FindingsStore,
-    github,
+    gitea, github, huggingface,
+    reporter::{styles::Styles, DetailsReporter},
     rule_loader::RuleLoader,
     rules_database::RulesDatabase,
     scanner::{load_and_record_rules, run_scan},
-    update::check_for_update,
+    update::check_for_update_async,
+    validation::set_user_agent_suffix,
 };
 use serde_json::json;
 use tempfile::TempDir;
@@ -64,19 +69,31 @@ use tracing_subscriber::{
 };
 use url::Url;
 
-use crate::cli::commands::gitlab::{GitLabCommand, GitLabRepoType, GitLabReposCommand};
+use crate::cli::commands::{
+    azure::AzureRepoType,
+    bitbucket::{BitbucketAuthArgs, BitbucketRepoType},
+    gitea::GiteaRepoType,
+    gitlab::GitLabRepoType,
+    scan::{ListRepositoriesCommand, ScanOperation},
+    view,
+};
 
 fn main() -> anyhow::Result<()> {
     color_backtrace::install();
     // Parse command-line arguments
-    let args = CommandLineArgs::parse_args();
+    let CommandLineArgs { command, global_args } = CommandLineArgs::parse_args();
+
+    set_user_agent_suffix(global_args.user_agent_suffix.clone());
+
+    let args = CommandLineArgs { command, global_args };
 
     // Determine the number of jobs, defaulting to the number of CPUs
-    let num_jobs = match args.command {
-        Command::Scan(ref scan_args) => scan_args.num_jobs,
-        Command::GitHub(_) => num_cpus::get(), // Default for GitHub commands
-        Command::GitLab(_) => num_cpus::get(), // Default for GitLab commands
-        Command::Rules(_) => num_cpus::get(),  // Default for Rules commands
+    let num_jobs = match &args.command {
+        Command::Scan(scan_args) => scan_args.scan_args.num_jobs,
+        Command::SelfUpdate => 1, // Self-update doesn't need a thread pool
+        Command::Rules(_) => num_cpus::get(), // Default for Rules commands
+        Command::AccessMap(_) => 1,
+        Command::View(_) => 1,
     };
 
     // Set up the Tokio runtime with the specified number of threads
@@ -117,7 +134,7 @@ fn setup_logging(global_args: &GlobalArgs) {
     let fmt_layer = fmt::layer()
         .with_writer(std::io::stderr) // Write logs to stderr
         .with_target(true) // Enable target filtering
-        .with_ansi(false) // Disable colors
+        .with_ansi(std::io::stderr().is_terminal()) // Emit ANSI colours when stderr is a TTY
         .without_time(); // Remove timestamps
                          // Build and initialize the registry
     registry()
@@ -132,7 +149,18 @@ pub fn determine_exit_code(datastore: &Arc<Mutex<findings_store::FindingsStore>>
     // exit with code 0 if there are NO findings discovered
     let ds = datastore.lock().unwrap();
     // Get all matches
-    let all_matches = ds.get_matches();
+    // let all_matches = ds.get_matches();
+
+    // Only consider visible matches when determining the exit code
+    let all_matches = ds
+        .get_matches()
+        .iter()
+        .filter(|msg| {
+            let (_, _, match_item) = &***msg;
+            match_item.visible
+        })
+        .collect::<Vec<_>>();
+
     if all_matches.is_empty() {
         // No findings discovered
         0
@@ -141,7 +169,7 @@ pub fn determine_exit_code(datastore: &Arc<Mutex<findings_store::FindingsStore>>
         let validated_matches = all_matches
             .iter()
             .filter(|msg| {
-                let (_, _, match_item) = &***msg;
+                let (_, _, match_item) = &****msg;
                 match_item.validation_success
             })
             .count();
@@ -156,91 +184,212 @@ pub fn determine_exit_code(datastore: &Arc<Mutex<findings_store::FindingsStore>>
 }
 
 async fn async_main(args: CommandLineArgs) -> Result<()> {
-    // Create a temporary directory
-    let temp_dir = TempDir::new().context("Failed to create temporary directory")?;
-    let clone_dir = temp_dir.path().to_path_buf();
-
-    // Create the in-memory datastore
-    let datastore = Arc::new(Mutex::new(FindingsStore::new(clone_dir)));
     setup_logging(&args.global_args);
-    let update_msg = check_for_update(&args.global_args, None);
+    let global_args = args.global_args.clone();
+
     match args.command {
-        Command::Scan(mut scan_args) => {
-            // —————————————————————————————————————————
-            // If no paths or a single "-", slurp stdin into a temp file
-            // —————————————————————————————————————————
-            info!(
-                "Launching with {} concurrent scan jobs. Use --num-jobs to override.",
-                &scan_args.num_jobs
-            );
-            let paths = &scan_args.input_specifier_args.path_inputs;
-            let is_dash = paths.iter().any(|p| p.as_os_str() == "-");
-            if (paths.is_empty() || is_dash) && !atty::is(atty::Stream::Stdin) {
-                // read all stdin
-                let mut buf = Vec::new();
-                std::io::stdin().read_to_end(&mut buf)?;
-                // write into temp_dir
-                let stdin_file = temp_dir.path().join("stdin_input");
-                std::fs::write(&stdin_file, buf)?;
-                // replace inputs
-                scan_args.input_specifier_args.path_inputs = vec![stdin_file.into()];
-            }
-
-            // now proceed exactly as before
-            let rules_db = Arc::new(load_and_record_rules(&scan_args, &datastore)?);
-            run_scan(&args.global_args, &scan_args, &rules_db, Arc::clone(&datastore)).await?;
-            let exit_code = determine_exit_code(&datastore);
-
-            if let Err(e) = temp_dir.close() {
-                eprintln!("Failed to close temporary directory: {}", e);
-            }
-            std::process::exit(exit_code);
+        Command::SelfUpdate => {
+            let mut g = global_args;
+            g.self_update = true;
+            g.no_update_check = false;
+            let _ = check_for_update_async(&g, None).await;
+            Ok(())
         }
-        Command::Rules(ref rule_args) => match &rule_args.command {
-            RulesCommand::Check(check_args) => {
-                run_rules_check(&check_args)?;
-            }
-            RulesCommand::List(list_args) => {
-                run_rules_list(&list_args)?;
-            }
-        },
-        Command::GitHub(github_args) => match github_args.command {
-            GitHubCommand::Repos(repos_command) => match repos_command {
-                GitHubReposCommand::List(list_args) => {
-                    github::list_repositories(
-                        github_args.github_api_url,
-                        args.global_args.ignore_certs,
-                        args.global_args.use_progress(),
-                        &list_args.repo_specifiers.user,
-                        &list_args.repo_specifiers.organization,
-                        list_args.repo_specifiers.all_organizations,
-                        list_args.repo_specifiers.repo_type.into(),
-                    )
-                    .await?;
+        Command::View(view_args) => view::run(view_args).await,
+        Command::AccessMap(identity_args) => access_map::run(identity_args).await,
+        command => {
+            let update_status = check_for_update_async(&global_args, None).await;
+            match command {
+                Command::Scan(scan_command) => match scan_command.into_operation()? {
+                    ScanOperation::Scan(mut scan_args) => {
+                        let temp_dir =
+                            TempDir::new().context("Failed to create temporary directory")?;
+                        let temp_dir_path = temp_dir.path().to_path_buf();
+                        let clone_dir = if let Some(clone_dir) =
+                            scan_args.input_specifier_args.git_clone_dir.as_ref()
+                        {
+                            std::fs::create_dir_all(clone_dir)?;
+                            clone_dir.to_path_buf()
+                        } else {
+                            temp_dir_path.clone()
+                        };
+                        let keep_clones = scan_args.input_specifier_args.keep_clones
+                            && scan_args.input_specifier_args.git_clone_dir.is_none();
+
+                        let datastore = Arc::new(Mutex::new(FindingsStore::new(clone_dir)));
+                        info!(
+                            "Launching with {} concurrent scan jobs. Use --num-jobs to override.",
+                            &scan_args.num_jobs
+                        );
+                        let paths = &scan_args.input_specifier_args.path_inputs;
+                        let is_dash = paths.iter().any(|p| p.as_os_str() == "-");
+                        if (paths.is_empty() || is_dash) && !atty::is(atty::Stream::Stdin) {
+                            let mut buf = Vec::new();
+                            std::io::stdin().read_to_end(&mut buf)?;
+                            let stdin_file = temp_dir_path.join("stdin_input");
+                            std::fs::write(&stdin_file, buf)?;
+                            scan_args.input_specifier_args.path_inputs = vec![stdin_file.into()];
+                        }
+
+                        let rules_db = Arc::new(load_and_record_rules(
+                            &scan_args,
+                            &datastore,
+                            global_args.use_progress(),
+                        )?);
+                        run_scan(
+                            &global_args,
+                            &scan_args,
+                            &rules_db,
+                            Arc::clone(&datastore),
+                            &update_status,
+                        )
+                        .await?;
+                        if update_status.is_outdated {
+                            if let Some(styled) = &update_status.styled_message {
+                                let _ = writeln!(std::io::stderr(), "{}", styled);
+                            }
+                        }
+                        let exit_code = determine_exit_code(&datastore);
+
+                        if scan_args.view_report {
+                            let reporter = DetailsReporter {
+                                datastore: Arc::clone(&datastore),
+                                styles: Styles::new(global_args.use_color(std::io::stdout())),
+                                only_valid: scan_args.only_valid,
+                            };
+                            let envelope = reporter.build_report_envelope(&scan_args)?;
+                            let report_bytes = serde_json::to_vec_pretty(&envelope)?;
+                            let view_args = view::ViewArgs {
+                                report: None,
+                                port: view::DEFAULT_PORT,
+                                open_browser: true,
+                                report_bytes: Some(report_bytes),
+                            };
+                            view::run(view_args).await?;
+                        }
+
+                        if keep_clones {
+                            let _kept_path = temp_dir.keep(); // consumes TempDir; prevents auto-delete
+                        } else if let Err(e) = temp_dir.close() {
+                            eprintln!("Failed to close temporary directory: {}", e);
+                        }
+
+                        std::process::exit(exit_code);
+                    }
+                    ScanOperation::ListRepositories(list_command) => match list_command {
+                        ListRepositoriesCommand::Github { api_url, specifiers } => {
+                            github::list_repositories(
+                                api_url,
+                                global_args.ignore_certs,
+                                global_args.use_progress(),
+                                &specifiers.user,
+                                &specifiers.organization,
+                                specifiers.all_organizations,
+                                &specifiers.exclude_repos,
+                                specifiers.repo_type.into(),
+                            )
+                            .await?;
+                        }
+                        ListRepositoriesCommand::Gitlab { api_url, specifiers } => {
+                            kingfisher::gitlab::list_repositories(
+                                api_url,
+                                global_args.ignore_certs,
+                                global_args.use_progress(),
+                                &specifiers.user,
+                                &specifiers.group,
+                                specifiers.all_groups,
+                                specifiers.include_subgroups,
+                                &specifiers.exclude_repos,
+                                specifiers.repo_type.into(),
+                            )
+                            .await?;
+                        }
+                        ListRepositoriesCommand::Gitea { api_url, specifiers } => {
+                            gitea::list_repositories(
+                                api_url,
+                                global_args.ignore_certs,
+                                global_args.use_progress(),
+                                &specifiers.user,
+                                &specifiers.organization,
+                                specifiers.all_organizations,
+                                &specifiers.exclude_repos,
+                                specifiers.repo_type.into(),
+                            )
+                            .await?;
+                        }
+                        ListRepositoriesCommand::Bitbucket { api_url, specifiers } => {
+                            let auth_config = bitbucket::AuthConfig::from_env();
+                            bitbucket::list_repositories(
+                                api_url,
+                                auth_config,
+                                global_args.ignore_certs,
+                                global_args.use_progress(),
+                                &specifiers.user,
+                                &specifiers.workspace,
+                                &specifiers.project,
+                                specifiers.all_workspaces,
+                                &specifiers.exclude_repos,
+                                specifiers.repo_type.into(),
+                            )
+                            .await?;
+                        }
+                        ListRepositoriesCommand::Azure { base_url, specifiers } => {
+                            azure::list_repositories(
+                                base_url,
+                                global_args.ignore_certs,
+                                global_args.use_progress(),
+                                &specifiers.organization,
+                                &specifiers.project,
+                                specifiers.all_projects,
+                                &specifiers.exclude_repos,
+                                specifiers.repo_type.into(),
+                            )
+                            .await?;
+                        }
+                        ListRepositoriesCommand::Huggingface { specifiers } => {
+                            let repo_specifiers = huggingface::RepoSpecifiers {
+                                user: specifiers.user.clone(),
+                                organization: specifiers.organization.clone(),
+                                model: specifiers.model.clone(),
+                                dataset: specifiers.dataset.clone(),
+                                space: specifiers.space.clone(),
+                                exclude: specifiers.exclude.clone(),
+                            };
+                            let auth = huggingface::AuthConfig::from_env();
+                            huggingface::list_repositories(
+                                &repo_specifiers,
+                                &auth,
+                                global_args.ignore_certs,
+                                global_args.use_progress(),
+                            )
+                            .await?;
+                        }
+                    },
+                },
+                Command::Rules(ref rule_args) => match &rule_args.command {
+                    RulesCommand::Check(check_args) => {
+                        run_rules_check(&check_args)?;
+                    }
+                    RulesCommand::List(list_args) => {
+                        run_rules_list(&list_args)?;
+                    }
+                },
+                Command::View(_) => {
+                    anyhow::bail!("View command should not reach this branch")
                 }
-            },
-        },
-        Command::GitLab(gitlab_args) => match gitlab_args.command {
-            GitLabCommand::Repos(repos_command) => match repos_command {
-                GitLabReposCommand::List(list_args) => {
-                    kingfisher::gitlab::list_repositories(
-                        gitlab_args.gitlab_api_url,
-                        args.global_args.ignore_certs,
-                        args.global_args.use_progress(),
-                        &list_args.repo_specifiers.user,
-                        &list_args.repo_specifiers.group,
-                        list_args.repo_specifiers.all_groups,
-                        list_args.repo_specifiers.repo_type.into(),
-                    )
-                    .await?;
+                Command::AccessMap(_) => {
+                    anyhow::bail!("AccessMap command should not reach this branch")
                 }
-            },
-        },
+                Command::SelfUpdate => {
+                    anyhow::bail!("SelfUpdate command should not reach this branch")
+                }
+            }
+            if let Some(message) = &update_status.message {
+                info!("{}", message);
+            }
+            Ok(())
+        }
     }
-    if let Some(msg) = update_msg {
-        info!("{msg}");
-    }
-    Ok(())
 }
 
 /// Create a default ScanArgs instance for rule loading
@@ -256,42 +405,117 @@ fn create_default_scan_args() -> cli::commands::scan::ScanArgs {
         input_specifier_args: InputSpecifierArgs {
             path_inputs: Vec::new(),
             git_url: Vec::new(),
+            git_clone_dir: None,
+            keep_clones: false,
+            repo_clone_limit: None,
+            include_contributors: false,
             github_user: Vec::new(),
             github_organization: Vec::new(),
+            github_exclude: Vec::new(),
             all_github_organizations: false,
             github_api_url: url::Url::parse("https://api.github.com/").unwrap(),
             github_repo_type: GitHubRepoType::Source,
             // new GitLab defaults
             gitlab_user: Vec::new(),
             gitlab_group: Vec::new(),
+            gitlab_exclude: Vec::new(),
             all_gitlab_groups: false,
             gitlab_api_url: Url::parse("https://gitlab.com/").unwrap(),
-            gitlab_repo_type: GitLabRepoType::Owner,
+            gitlab_repo_type: GitLabRepoType::All,
+            gitlab_include_subgroups: false,
+
+            huggingface_user: Vec::new(),
+            huggingface_organization: Vec::new(),
+            huggingface_model: Vec::new(),
+            huggingface_dataset: Vec::new(),
+            huggingface_space: Vec::new(),
+            huggingface_exclude: Vec::new(),
+
+            gitea_user: Vec::new(),
+            gitea_organization: Vec::new(),
+            gitea_exclude: Vec::new(),
+            all_gitea_organizations: false,
+            gitea_api_url: Url::parse("https://gitea.com/api/v1/").unwrap(),
+            gitea_repo_type: GiteaRepoType::Source,
+
+            bitbucket_user: Vec::new(),
+            bitbucket_workspace: Vec::new(),
+            bitbucket_project: Vec::new(),
+            bitbucket_exclude: Vec::new(),
+            all_bitbucket_workspaces: false,
+            bitbucket_api_url: Url::parse("https://api.bitbucket.org/2.0/").unwrap(),
+            bitbucket_repo_type: BitbucketRepoType::Source,
+            bitbucket_auth: BitbucketAuthArgs::default(),
+
+            azure_organization: Vec::new(),
+            azure_project: Vec::new(),
+            azure_exclude: Vec::new(),
+            all_azure_projects: false,
+            azure_base_url: Url::parse("https://dev.azure.com/").unwrap(),
+            azure_repo_type: AzureRepoType::Source,
+
+            jira_url: None,
+            jql: None,
+            confluence_url: None,
+            cql: None,
+            max_results: 100,
+
+            s3_bucket: None,
+            s3_prefix: None,
+            role_arn: None,
+            aws_local_profile: None,
+            gcs_bucket: None,
+            gcs_prefix: None,
+            gcs_service_account: None,
+            // Slack query
+            slack_query: None,
+            slack_api_url: Url::parse("https://slack.com/api/").unwrap(),
+
+            // Docker image scanning
+            docker_image: Vec::new(),
 
             // git clone / history options
             git_clone: GitCloneMode::Bare,
             git_history: GitHistoryMode::Full,
-            scan_nested_repos: true,
             commit_metadata: true,
+            repo_artifacts: false,
+            scan_nested_repos: true,
+            since_commit: None,
+            branch: None,
+            branch_root: false,
+            branch_root_commit: None,
+            staged: false,
         },
+        extra_ignore_comments: Vec::new(),
         content_filtering_args: ContentFilteringArgs {
             max_file_size_mb: 25.0,
             no_extract_archives: true,
             extraction_depth: 2,
-            ignore: Vec::new(),
+            exclude: Vec::new(), // Exclude patterns
             no_binary: true,
         },
         confidence: ConfidenceLevel::Medium,
         no_validate: true,
+        access_map: false,
         rule_stats: false,
         only_valid: false,
         min_entropy: None,
         redact: false,
         git_repo_timeout: 1800,
         no_dedup: false,
-        ignore_tests: false,
-        snippet_length: 256,
+        view_report: false,
+        baseline_file: None,
+        manage_baseline: false,
+        skip_regex: Vec::new(),
+        skip_word: Vec::new(),
+        skip_aws_account: Vec::new(),
+        skip_aws_account_file: None,
         output_args: OutputArgs { output: None, format: ReportOutputFormat::Pretty },
+        no_base64: false,
+        no_inline_ignore: false,
+        no_ignore_if_contains: false,
+        validation_timeout: 10,
+        validation_retries: 1,
     }
 }
 /// Run the rules check command

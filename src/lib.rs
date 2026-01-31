@@ -1,22 +1,31 @@
+pub mod access_map;
+pub mod azure;
+pub mod baseline;
 pub mod binary;
+pub mod bitbucket;
 pub mod blob;
 pub mod bstring_escape;
 pub mod bstring_table;
 pub mod cli;
+pub mod confluence;
 pub mod content_type;
 pub mod decompress;
 pub mod defaults;
 pub mod entropy;
 pub mod finding_data;
 pub mod findings_store;
+pub mod gcs;
 pub mod git_binary;
 pub mod git_commit_metadata;
 pub mod git_metadata_graph;
 mod git_repo_enumerator;
 pub mod git_url;
+pub mod gitea;
 pub mod github;
 pub mod gitlab;
-pub mod guesser;
+pub mod huggingface;
+pub mod inline_ignore;
+pub mod jira;
 pub mod liquid_filters;
 pub mod location;
 pub mod matcher;
@@ -27,14 +36,16 @@ pub mod rule_loader;
 pub mod rule_profiling;
 pub mod rules;
 pub mod rules_database;
+pub mod s3;
 pub mod safe_list;
 pub mod scanner;
 pub mod scanner_pool;
-pub mod serde_utils;
+pub mod slack;
 pub mod snippet;
 pub mod update;
 pub mod util;
 pub mod validation;
+pub mod validation_body;
 
 use std::path::{Path, PathBuf};
 
@@ -43,44 +54,26 @@ use crossbeam_channel::Sender;
 pub use git_repo_enumerator::{GitRepoEnumerator, GitRepoResult, GitRepoWithMetadataEnumerator};
 pub use gix::{self, Repository, ThreadSafeRepository};
 use gix::{open::Options, open_opts};
+use globset::{Glob, GlobSet, GlobSetBuilder};
 pub use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use ignore::{DirEntry, WalkBuilder, WalkState};
 use tokio::time::Duration;
 use tracing::debug;
 
-macro_rules! unwrap_some_or_continue {
-    ($arg:expr, $on_error:expr $(,)?) => {
-        match $arg {
-            Some(v) => v,
-            None => {
-                #[allow(clippy::redundant_closure_call)]
-                $on_error();
-                continue;
-            }
-        }
-    };
+#[derive(Clone)]
+pub struct GitDiffConfig {
+    pub since_ref: Option<String>,
+    pub branch_ref: String,
+    pub branch_root: Option<String>,
+    pub staged: bool,
 }
-pub(crate) use unwrap_some_or_continue;
-
-macro_rules! unwrap_ok_or_continue {
-    ($arg:expr, $on_error:expr $(,)?) => {
-        match $arg {
-            Ok(v) => v,
-            Err(e) => {
-                #[allow(clippy::redundant_closure_call)]
-                $on_error(e);
-                continue;
-            }
-        }
-    };
-}
-pub(crate) use unwrap_ok_or_continue;
 
 struct EnumeratorConfig {
     enumerate_git_history: bool,
     collect_git_metadata: bool,
     repo_scan_timeout: Duration,
-    // gitignore: Gitignore,
+    exclude_globset: Option<std::sync::Arc<GlobSet>>,
+    git_diff: Option<GitDiffConfig>,
 }
 
 pub enum FoundInput {
@@ -204,6 +197,7 @@ pub struct FilesystemEnumerator {
     extract_archives: bool,
     extraction_depth: usize,
     no_dedup: bool,
+    exclude_globset: Option<std::sync::Arc<GlobSet>>,
 }
 
 impl FilesystemEnumerator {
@@ -234,6 +228,7 @@ impl FilesystemEnumerator {
             extract_archives: !args.content_filtering_args.no_extract_archives,
             extraction_depth: args.content_filtering_args.extraction_depth as usize,
             no_dedup: args.no_dedup,
+            exclude_globset: None,
         })
     }
 
@@ -287,6 +282,42 @@ impl FilesystemEnumerator {
         self
     }
 
+    pub fn set_exclude_patterns(&mut self, patterns: &[String]) -> Result<&mut Self> {
+        if patterns.is_empty() {
+            return Ok(self);
+        }
+        let mut builder = GlobSetBuilder::new();
+        for pat in patterns {
+            // Add the pattern itself
+            builder.add(Glob::new(pat)?);
+
+            // If the pattern doesn't contain any glob characters, also exclude
+            // directories with this name anywhere in the tree. This lets
+            // `--exclude=.git` skip the entire `.git` directory subtree no
+            // matter where it appears in the path.
+            if !pat.contains('*') && !pat.contains('?') && !pat.contains('[') {
+                let base = pat.trim_end_matches('/');
+                builder.add(Glob::new(&format!("**/{}", base))?);
+                builder.add(Glob::new(&format!("**/{}/**", base))?);
+            }
+        }
+        let globset = std::sync::Arc::new(builder.build()?);
+        self.exclude_globset = Some(globset.clone());
+        self.filter_entry(move |entry| {
+            let path = entry.path();
+            let matches = globset.is_match(path);
+            if matches {
+                debug!("Skipping {} due to --exclude", path.display());
+            }
+            !matches
+        });
+        Ok(self)
+    }
+
+    pub fn exclude_globset(&self) -> Option<std::sync::Arc<GlobSet>> {
+        self.exclude_globset.clone()
+    }
+
     pub fn gitignore(&self) -> Result<Gitignore> {
         Ok(self.gitignore_builder.build()?)
     }
@@ -305,10 +336,38 @@ impl FilesystemEnumerator {
 
 /// Opens the given Git repository if it exists, returning None if not.
 pub fn open_git_repo(path: &Path) -> Result<Option<Repository>> {
-    let opts = Options::isolated().open_path_as_is(true); // <- OK now
+    open_git_repo_with_options(path, true)
+}
+
+/// Opens the given Git repository with explicit control over the
+/// `open_path_as_is` option, returning None if not.
+pub fn open_git_repo_with_options(
+    path: &Path,
+    open_path_as_is: bool,
+) -> Result<Option<Repository>> {
+    let opts = Options::isolated().open_path_as_is(open_path_as_is);
     match open_opts(path, opts) {
         Err(gix::open::Error::NotARepository { .. }) => Ok(None),
         Err(err) => Err(err.into()),
         Ok(repo) => Ok(Some(repo)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use git2::Repository as Git2Repository;
+    use tempfile::tempdir;
+
+    #[test]
+    fn open_git_repo_accepts_worktree_root() -> Result<()> {
+        let temp = tempdir()?;
+        let repo_path = temp.path().join("repo");
+        Git2Repository::init(&repo_path)?;
+
+        // assert!(open_git_repo(&repo_path)?.is_some());
+        assert!(open_git_repo(&repo_path.join(".git"))?.is_some());
+
+        Ok(())
     }
 }

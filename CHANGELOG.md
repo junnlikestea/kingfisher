@@ -2,6 +2,309 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.76.0]
+- Fixed validation deduplication for rules with nested unnamed captures (e.g. `(?<REGEX>...(ABC|DEF)...)`) to use the primary capture for grouping, ensuring each unique match triggers a separate validation request.
+- Added trace-level (`-vv`) logging for internal validation dedup keys and grouping to aid debugging.
+- Switched compression dependencies to pure-Rust bzip2/lzma implementations and pared zip features to avoid C-based codecs for bz2/xz handling.
+
+## [v1.75.0]
+- Enhanced Access Map View: added fingerprint display, enabled searching by fingerprint, and implemented bidirectional navigation between Findings and Access Map nodes.
+- Added Slack Access Map support with granular permissions in the tree view.
+- Improved HTML report
+- Improved several rules
+- Added new rules for Apollo, Clay, CodeRabbit, Customer.io, Instantly, Vast.ai
+- Skipped per-repository report writes when an output file is specified and emit a single aggregated report after multi-repository scans to preserve full output content in files.
+
+## [v1.74.0]
+- Added new rules: cursor, definednetworking, filezilla, harness, intra42, klingai, lark, mergify, naver, plaid, resend, retellai
+
+## [v1.73.0]
+- Will now prefer git history findings when identical secrets appear in both current files and git history (dedup only).
+- Fixed report viewer to add support for opening JSONL.
+- Add opt-in contributor repository enumeration for GitHub/GitLab `--git-url` scans with `--include-contributors`, plus `--repo-clone-limit` to cap repo cloning.
+- Add `--git-clone-dir` to set the parent clone directory and `--keep-clones` to preserve cloned repos after scans.
+- Added several new rules.
+- Added configurable validation timeout and retry settings for `kingfisher scan`.
+
+## [v1.72.0]
+- Fixed deduplication for dependency-provider rules so dependent validations run per blob
+- Updated Artifactory rule entropy and added new artifactory rule
+- Aliased "kingfisher self-update" as "kingfisher update"
+- Map SARIF result levels from rule confidence
+- Added tag selection support to the bash and PowerShell install scripts.
+
+## [v1.71.0]
+- Improved Report Viewer layout
+- Improved Salesforce rule
+
+## [v1.70.0]
+- Added `--staged` argument to support new `pre-commit` behavior and added integration coverage to ensure validated secrets block commits when used as pre-commit hook
+- Added new rules for AWS Bedrock, Voyage.ai, Posthog, Atlassian
+- Added an embedded web-based report and access-map viewer via `kingfisher view` subcommand that can load JSON or JSONL reports passed on the CLI (or upload them in the browser) 
+- Updated Jira create to gouqi, which supports Jira api v2 and v3
+
+## [v1.69.0]
+- Reduced per-match memory usage by compacting stored source locations and interning repeated capture names.
+- Stored optional validation response bodies as boxed strings to avoid allocating empty payloads and to streamline validator caches.
+- Parallelized git cloning based on the configured job count and begin scanning repositories as soon as each clone finishes to reduce end-to-end scan times.
+- Combined per-repository results into a single aggregate summary after scans complete.
+- Added initial access-map support and report viewer html file. Currently beta features.
+
+## [v1.68.0]
+- Fixed Bitbucket authenticated cloning bug
+
+## [v1.67.0]
+- Added checksum to GitLab rule
+- Fixed deduplication to consider rule identifiers so overlapping patterns are not merged before validation
+- After scan summaries, emit the styled outdated-version notice to stderr when a newer release is available
+- Reduced false positives across a number of rules
+- Updated Summary to include scan date, kingfisher version ran, and latest kingfisher version available
+
+## [v1.66.0]
+- Updating to support Bitbucket App Passwords
+- Improved boundaries for several rules
+- Added more rules
+
+## [v1.65.0]
+- Skip reporting MongoDB and Postgres findings when their connection strings cannot be parsed, even when validation is disabled.
+- Improve MySQL detection by broadening URI coverage and adding live validation that skips clearly invalid connection strings.
+- Added a helper to truncate validation response bodies only at UTF-8 character boundaries to prevent panics during validation.
+
+## [v1.64.0]
+- Fixed a bug when using --redact, that broke validation
+- Added JDBC rule with validator
+- Filter out empty 'KF_BITBUCKET_*' environment values when constructing the Bitbucket authentication configuration so blank variables no longer override valid credentials
+
+## [v1.63.1]
+- Updated allocator
+
+## [v1.63.0]
+- Fixed bug when retrieving some finding values and injecting them as TOKENS in the rule templates
+- Improved Datadog rule
+- Improved AWS rule
+
+## [v1.62.0]
+- Added `pattern_requirements` checks to rules, providing lightweight post-regex character-class validation without lookarounds. See docs/RULES.md for detail
+- Added an `ignore_if_contains` option to `pattern_requirements` to drop matches containing case-insensitive placeholder words, with tests covering the new behavior.
+- Updated rules to adopt the new `pattern_requirements` support.
+- Added checksum comparisons to `pattern_requirements`, new `suffix`, `crc32`, and `base62` Liquid filters, and verbose logging so mismatched checksums are skipped with context rather than reported as findings.
+- Split GitHub token detections into fine-grained/fixed-format variants and enforce checksum validation for modern GitHub token families (PAT, OAuth, App, refresh) while preserving legacy coverage.
+- Added a rule for Zuplo tokens.
+- Added checksum calculation for Confluent, GitHub, and Zuplo tokens, which can drastically reduce false positive reports.
+- Improved OpsGenie validation.
+- Automatically enable `--no-dedup` when `--manage-baseline` is supplied so baseline management keeps every finding.
+- This release is focused on further improving detection accuracy, before even attempting to validate findings.
+- Updated GitHub Actions CI for Windows and buildwin.bat script
+
+## [v1.61.0]
+- Fixed local filesystem scans to keep `open_path_as_is` enabled when opening Git repositories and only disable it for diff-based scans.
+- Created Linux and Windows specific installer script
+- Updated diff-focused scanning so `--branch-root-commit` can be provided alongside `--branch`, letting you diff from a chosen commit while targeting a specific branch tip (still defaulting back to the `--branch` ref when the commit is omitted).
+- Updated rules
+
+## [v1.60.0]
+- Removed the `--bitbucket-username`, `--bitbucket-token`, and `--bitbucket-oauth-token` flags in favour of `KF_BITBUCKET_*` environment variables when authenticating to Bitbucket.
+- Added provider-specific `kingfisher scan` subcommands (for example `kingfisher scan github …`) that translate into the legacy flags under the hood. The new layout keeps backwards compatibility while removing the wall of provider options from `kingfisher scan --help`.
+- Updated the README so every provider example (GitHub, GitLab, Bitbucket, Azure Repos, Gitea, Hugging Face, Slack, Jira, Confluence, S3, GCS, Docker) uses the new subcommand style.
+- Legacy provider flags (for example `--github-user`, `--gitlab-group`, `--bitbucket-workspace`, `--s3-bucket`) still work but now emit a deprecation warning to encourage migration to the new `kingfisher scan <provider>` flow.
+- Kept the direct `kingfisher scan /path/to/dir` flow for local filesystem / local git repo scans while adding a `--list-only` switch to each provider subcommand so repository enumeration no longer requires the standalone `github repos`, `gitlab repos`, etc. commands.
+- Removed the legacy top-level provider commands (`kingfisher github`, `kingfisher gitlab`, `kingfisher gitea`, `kingfisher bitbucket`, `kingfisher azure`, `kingfisher huggingface`) now that enumeration lives under `kingfisher scan <provider> --list-only`.
+
+## [v1.59.0]
+- Fixed `kingfisher scan github …` (and other provider-specific subcommands) so they no longer demand placeholder path arguments before the CLI accepts the request.
+- Fixed `kingfisher scan` so that providing `--branch` without `--since-commit` now diffs the branch against the empty tree and scans every commit reachable from that branch.
+- Added rules for meraki, duffel, finnhub, frameio, freshbooks, gitter, infracost, launchdarkly, lob, maxmind, messagebird, nytimes, prefect, scalingo, sendinblue, sentry, shippo, twitch, typeform
+
+- ## [v1.58.0]
+- Added first-class Hugging Face scanning support, including CLI enumeration, token authentication, and integration with remote scans.
+- Condensed GitError formatting to report the exit status and the first informative lines from stdout/stderr, producing concise git clone failure logs.
+- Added support for scanning Google Cloud Storage buckets via `--gcs-bucket`, including optional prefixes and service-account authentication.
+- Added `--skip-aws-account` (now accepting comma-separated values) and `--skip-aws-account-file` to bypass live AWS validation for known canary/honey-token account IDs without triggering alerts. Kingfisher now ships with several canary AWS account IDs pre-seeded in the skip list and now reports matching findings as "Not Attempted" with the "Response" containing "(skip list entry)" so it's clear that validation was intentionally skipped and why.
+  
+## [v1.57.0]
+- Added inline ignore directive detection to treat suppression tokens anywhere on surrounding lines, including multi-line handling
+- Added a `--no-ignore` CLI flag to disable inline directives when you need every potential secret reported
+- Added: repeatable `--ignore-comment <TOKEN>` flag to reuse inline directives from other scanners (for example `NOSONAR`, `kics-scan ignore`, `gitleaks:allow`, etc)
+- Respect user color settings in update messages by using the same color helper as the main reporter, ensuring consistent output and no ANSI codes on update check, when color is disabled
+
+## [v1.56.0]
+- Fixed tree-sitter scanning bug where passing --no-base64 caused errors to be printed when the file type couldn’t be determined
+
+## [v1.55.0]
+- Added first-class Azure Repos support, including CLI commands, enumeration, and documentation updates
+- Improved performance of tree-sitter parsing
+- Updated Windows build script to ensure static binary is produced
+
+## [v1.54.0]
+- Added first-class Gitea support, including CLI commands, environment-based authentication, documentation, and integration with scans and repository enumeration.
+- Populate the finding path from git blob metadata so history-derived secrets display their file location instead of an empty path
+- Replaced Match::finding_id’s SHA1-based hashing with a fast xxh3_64 digest that keeps IDs deterministic while eliminating a hot-path SHA1 dependency
+
+## [v1.53.0]
+- Added first-class Bitbucket support, including CLI commands, authentication helpers, documentation, and integration testing.
+
+## [v1.52.0]
+- Enabled ANSI formatting in the tracing formatter whenever stderr is attached to a terminal so colorized updater messages render correctly instead of showing escape sequences. 
+- Added a new CLI flag, `--user-agent-suffix` to allow developers to append additional information to the user-agent
+- Removed the unused --rlimit-nofile flag
+
+## [1.51.0]
+- Added diff-only Git scanning via `--since-commit` and `--branch`, including remote-aware ref resolution so CI jobs can pair `--git-url` clones with pull request branches
+
+## [1.50.0]
+- Added `--github-exclude` and `--gitlab-exclude` options to skip specific repositories when scanning or listing GitHub and GitLab sources, including support for gitignore-style glob patterns
+
+## [1.49.0]
+- Enabled MongoDB URI validation
+- AWS + GCP validators now respect HTTPS_PROXY and share a consistent user agent across AWS, GCP, and HTTP validation
+- Increase max-file-size default to 256 mb (up from 64 mb)
+- Improved AWS rule
+
+## [1.48.0]
+- Improved error message when self-update cannot find the current binary
+- Optimized memory usage via string interning and extensive data sharing
+- Replaced quadratic match filtering with a per-rule span map, fixing missed secrets in extremely large files and improving scan performance
+- Support scanning extremely large files by chunking input into 1 GiB segments with small overlaps, avoiding vectorscan buffer limits while preserving match offsets
+- Always use chunked vectorscan, eliminating the slow regex fallback for blobs over 4 GiB
+- Skip Base64 scanning for blobs over 64 MB to avoid a second pass over massive files
+- Increased max-file-size default to 64 MB (up from 25 MB)
+
+## [1.47.0]
+- MongoDB validator now validates `mongodb+srv://` URIs with a fast timeout instead of skipping them
+- Improved rules: github oauth2, diffbot, mailchimp, aws
+- Added validation to SauceLabs rule
+- Added rules: shodan, bitly, flickr
+- Decode Base64 blobs and scan their contents for secrets while skipping short strings for performance. This has a small performance impact and can be disabled with `--no-base64`
+
+## [1.46.0]
+- Improved rules: AWS, pem
+- Added rule for Ollama, Weights and Biases, Cerebras, Friendli, Fireworks.ai, NVIDIA NIM, together.ai, zhipu
+- Added `self-update` command to update the binary independently. Now supports updating over homebrew managed binary
+- MongoDB validator now checks `mongodb+srv://` URIs with fast-fail timeouts
+
+## [1.45.0]
+- Added `--repo-artifacts` flag to scan repository issues, gists/snippets, and wikis when cloning via `--git-url`
+- Added rules for sendbird, mattermost, langchain, notion
+- JWT validation hardened to reject alg:none by default (only allowed if explicitly configured), require iss for OIDC/JWKS verification, ensuring "Active Credential" means cryptographically verified and time-valid, not just unexpired
+- Updated the Git cloning logic to include all refs and minimize clone output, allowing Kingfisher to analyze pull request and deleted branch history
+
+## [1.44.0]
+- Fixed issue with self-update on Linux
+- Reverted the change to json and jsonl outputs by rule
+- Added `--skip-regex` and `--skip-word` flags to ignore secrets matching custom patterns or skipwords
+
+## [1.43.0]
+- Added rules for clearbit, kickbox, azure container registry, improved Azure Storage key
+- Grouped JSON and JSONL outputs by rule, restoring `matches` arrays in reports
+
+## [1.42.0]
+- Fixed pagination issue when calling gitlab api
+- Expanded directory exclusion handling to interpret plain patterns as prefixes, ensuring options like --exclude .git also skip all nested paths
+- Updated baseline management to track encountered findings and remove entries that are no longer present, saving the baseline file whenever entries are pruned or new matches are added
+- Added rules for authress, clickhouse, codecov, contentful, curl, dropbox, fly.io, hubspot, firecrawl
+- Internal refactoring of rule loader, git enumerator, and filetype guesser
+- Improved language detection
+
+## [1.41.0]
+- Added support for scanning gitlab subgroups, with `kingfisher scan --gitlab-group my-group --gitlab-include-subgroups`
+- Added rule for Vercel
+
+## [1.40.0]
+- Dropped the “prevalidated” flag from rule definitions and validation logic so every finding now flows through the standard active/inactive/unknown pipeline, simplifying rule configuration and preventing special‑case bypasses
+- Improved Tailscale api key detectors
+
+## [1.39.0]
+- Added support for scanning Confluence pages via `--confluence-url` and `--cql`
+
+## [1.38.0]
+- `--quiet` now suppresses scan summaries and rule statistics unless `--rule-stats` is explicitly provided
+- Added X Consumer key detection and validation
+
+## [1.37.0]
+- GitLab: Matched GitLab group repository listings to glab by only enumerating projects that belong directly to each group, without automatically traversing subgroups
+
+## [1.36.0]
+- Fixed GitHub organization and GitLab group scans when using `--git-history=none`
+- JWT tokens without both `iss` and `aud` are no longer reported as active credentials
+
+## [1.35.0]
+- Remote scans with `--git-history=none` now clone repositories with a working tree and scan the current files instead of erroring with "No inputs to scan".
+- Fixed issue where `--redact` did not function properly
+- Fixed validation logic for clarifai rule
+
+## [1.34.0]
+- Use system TLS root certificates to support self-hosted GitLab instances with internal CAs
+- Added new rule: Coze personal access token
+- Updated Supabase rule to detect project url's and validate their corresponding tokens
+
+## [1.33.0]
+- Fixed header precedence so custom HTTP validation headers like `Accept` are preserved
+- Added new Heroku rule
+
+## [1.32.0]
+- Added support for scanning AWS S3 buckets via `--s3-bucket` and optional `--s3-prefix`
+- Added `--role-arn` and `--aws-local-profile` flags for S3 authentication alongside `KF_AWS_KEY`/`KF_AWS_SECRET`
+- Added progress bar for scanning s3 buckets
+- Refactored output reporting and formatting logic
+
+## [1.31.0]
+- New rules: Telegram bot token, OpenWeatherMap, Apify, Groq
+- New OpenAI detectors added (@joshlarsen)
+- Fixed bug that broke validation when using unnamed group captures
+
+## [1.30.0]
+- Fixed validation caching for HTTP validators to include rendered headers so inactive secrets no longer appear active.
+- Removed pre-commit installation hook, due to bugs
+
+## [1.29.0]
+- Fixed issue when more than 1 named capture group is used in a rule variable
+- Added a new liquid template filters: `b64dec`
+- Added custom validator for Coinbase, and a Coinbase rule that uses it
+
+## [1.28.0]
+- Added support for scanning Slack
+
+## [1.27.0]
+- Added Buildkite rule
+- Added support for scanning Docker images via `--docker-image`
+
+## [1.26.0]
+- Added rule for ElevenLabs
+- Added support for scanning Jira issues via a given JQL (Jira Query Language)
+
+## [1.25.0]
+- Fixed GitLab authentication bug
+- Added pre-commit and pre-receive installation hooks
+- MongoDB validator now skips `mongodb+srv://` URIs and returns a message that validation was skipped
+- Fixed noisy Baseten rule
+
+## [1.24.0]
+- Now generating DEB and RPM packages
+- Now releasing Docker images, and updated README
+- Added rule for Scale, Deepgram, AssemblyAI
+
+
+## [1.23.0]
+- Updating GitHub Action to generate Docker image
+- Added rules for Diffbot, ai21, baseten
+- Fixed supabase rule
+- Added 'alg' to JWT validation output
+
+## [1.22.0]
+- Added rules for Google Gemini AI, Cohere, Stability.ai, Replicate, Runway, Clarifai
+- Upgraded dependencies
+
+## [1.21.0]
+- Improved Azure Storage rule
+- Added rule to detect TravisCI encrypted values
+- Added baseline feature with `--baseline-file` and `--manage-baseline` flags
+- Introduced `--exclude` option for skipping paths
+- Added tests covering baseline and exclude workflow
+- Added validation for JWT tokens that checks `exp` and `nbf` claims
+- JWT validation performs OpenID Connect discovery using the `iss` claim and verifies signatures via JWKS
+- Removed `--ignore-tests` argument, because the `--exclude` flag provides more granular functionality
+- DigitalOcean rule update
+- Adafruit rule update
 
 ## [1.20.0]
 - Removed confirmation prompt when user provides --self-update flag

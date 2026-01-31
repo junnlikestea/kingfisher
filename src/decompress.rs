@@ -1,19 +1,18 @@
-//! src/utils/decompress.rs   (or wherever you keep the module)
-
 use std::{
     fs,
-    io::Read,
+    io::{BufReader, Read},
     path::{Component, Path, PathBuf},
 };
 
 use anyhow::Result;
 use asar::AsarReader;
-use bzip2::read::BzDecoder;
+use bzip2_rs::DecoderReader;
 use flate2::read::{GzDecoder, ZlibDecoder};
+use lzma_rs::xz_decompress;
 use memmap2::Mmap;
 use tar::Archive;
 use tempfile::{tempdir, TempDir};
-use xz2::read::XzDecoder;
+use uuid::Uuid;
 use zip::ZipArchive;
 
 /// Formats that are basically a ZIP container.
@@ -91,16 +90,28 @@ fn handle_tar_archive_streaming(
 
             let out_path = base_dir.join(&path_in_tar);
             if let Some(parent) = out_path.parent() {
-                fs::create_dir_all(parent)?;
+                if let Err(e) = fs::create_dir_all(parent) {
+                    tracing::debug!("failed to create directory {}: {}", parent.display(), e);
+                    continue;
+                }
             }
             if !is_safe_extract_path(&out_path) {
                 tracing::warn!("unsafe tar path: {}", out_path.display());
                 continue;
             }
-            let mut out_file = fs::File::create(&out_path)?;
-            std::io::copy(&mut entry, &mut out_file)?;
-
-            entries_on_disk.push((logical_path, out_path));
+            match fs::File::create(&out_path) {
+                Ok(mut out_file) => {
+                    if let Err(e) = std::io::copy(&mut entry, &mut out_file) {
+                        tracing::debug!("failed to extract {}: {}", out_path.display(), e);
+                        continue;
+                    }
+                    entries_on_disk.push((logical_path, out_path));
+                }
+                Err(e) => {
+                    tracing::debug!("failed to create file {}: {}", out_path.display(), e);
+                    continue;
+                }
+            }
         }
     }
     Ok(CompressedContent::ArchiveFiles(entries_on_disk))
@@ -122,26 +133,35 @@ fn handle_zip_archive_streaming(
 
             let out_path = base_dir.join(&name_in_zip);
             if let Some(parent) = out_path.parent() {
-                fs::create_dir_all(parent)?;
+                if let Err(e) = fs::create_dir_all(parent) {
+                    tracing::debug!("failed to create directory {}: {}", parent.display(), e);
+                    continue;
+                }
             }
             if !is_safe_extract_path(&out_path) {
                 tracing::warn!("unsafe zip path: {}", out_path.display());
                 continue;
             }
-            let mut out_file = fs::File::create(&out_path)?;
-            std::io::copy(&mut zipped_file, &mut out_file)?;
-
-            entries_on_disk.push((logical_path, out_path));
+            match fs::File::create(&out_path) {
+                Ok(mut out_file) => {
+                    if let Err(e) = std::io::copy(&mut zipped_file, &mut out_file) {
+                        tracing::debug!("failed to extract {}: {}", out_path.display(), e);
+                        continue;
+                    }
+                    entries_on_disk.push((logical_path, out_path));
+                }
+                Err(e) => {
+                    tracing::debug!("failed to create file {}: {}", out_path.display(), e);
+                    continue;
+                }
+            }
         }
     }
     Ok(CompressedContent::ArchiveFiles(entries_on_disk))
 }
 
-fn handle_asar_archive_in_memory(
-    buffer: Vec<u8>,
-    archive_path: &Path,
-) -> Result<CompressedContent> {
-    match AsarReader::new(&buffer, None) {
+fn handle_asar_archive_in_memory(buffer: &[u8], archive_path: &Path) -> Result<CompressedContent> {
+    match AsarReader::new(buffer, None) {
         Ok(reader) => {
             let mut contents = Vec::new();
             for (path_in_asar, file) in reader.files() {
@@ -155,12 +175,33 @@ fn handle_asar_archive_in_memory(
     }
 }
 
-fn stream_to_file<R: Read>(mut decoder: R, out_path: &Path) -> Result<CompressedContent> {
-    if !is_safe_extract_path(out_path) {
-        anyhow::bail!("unsafe path during decompression: {}", out_path.display());
+/// Validate and open a file for reading, checking for path traversal attacks.
+fn safe_open_for_read(path: &Path) -> Result<fs::File> {
+    if !is_safe_extract_path(path) {
+        anyhow::bail!("unsafe input path during decompression: {}", path.display());
     }
-    let mut out_file = fs::File::create(out_path)?;
+    Ok(fs::File::open(path)?)
+}
+
+/// Validate and create a file for writing, checking for path traversal attacks.
+fn safe_create_for_write(path: &Path) -> Result<fs::File> {
+    if !is_safe_extract_path(path) {
+        anyhow::bail!("unsafe output path during decompression: {}", path.display());
+    }
+    Ok(fs::File::create(path)?)
+}
+
+fn stream_to_file<R: Read>(mut decoder: R, out_path: &Path) -> Result<CompressedContent> {
+    let mut out_file = safe_create_for_write(out_path)?;
     std::io::copy(&mut decoder, &mut out_file)?;
+    Ok(CompressedContent::RawFile(out_path.to_owned()))
+}
+
+fn stream_xz_to_file(path: &Path, out_path: &Path) -> Result<CompressedContent> {
+    let input = safe_open_for_read(path)?;
+    let mut reader = BufReader::new(input);
+    let mut out_file = safe_create_for_write(out_path)?;
+    xz_decompress(&mut reader, &mut out_file)?;
     Ok(CompressedContent::RawFile(out_path.to_owned()))
 }
 
@@ -170,13 +211,13 @@ one *step* of decompression
 fn decompress_once(path: &Path, base_dir: Option<&Path>) -> Result<CompressedContent> {
     let extension = path.extension().and_then(|ext| ext.to_str()).map(|s| s.to_ascii_lowercase());
 
-    let mut file = fs::File::open(path)?;
+    let mut file = safe_open_for_read(path)?;
 
     if let Some(ext) = extension.as_deref() {
         match ext {
             "asar" => {
                 let mmap = unsafe { Mmap::map(&file)? };
-                return handle_asar_archive_in_memory(mmap.to_vec(), path);
+                return handle_asar_archive_in_memory(&mmap, path);
             }
             "tar" => {
                 if let Some(base) = base_dir {
@@ -196,22 +237,21 @@ fn decompress_once(path: &Path, base_dir: Option<&Path>) -> Result<CompressedCon
             }
             "gz" | "gzip" => {
                 let out_path = make_output_path(path, base_dir, "decomp.tar");
-                let decoder = GzDecoder::new(fs::File::open(path)?);
+                let decoder = GzDecoder::new(BufReader::new(safe_open_for_read(path)?));
                 return stream_to_file(decoder, &out_path);
             }
             "bz2" | "bzip2" => {
                 let out_path = make_output_path(path, base_dir, "decomp.tar");
-                let decoder = BzDecoder::new(fs::File::open(path)?);
+                let decoder = DecoderReader::new(BufReader::new(safe_open_for_read(path)?));
                 return stream_to_file(decoder, &out_path);
             }
             "xz" => {
                 let out_path = make_output_path(path, base_dir, "decomp.tar");
-                let decoder = XzDecoder::new(fs::File::open(path)?);
-                return stream_to_file(decoder, &out_path);
+                return stream_xz_to_file(path, &out_path);
             }
             "zlib" => {
                 let out_path = make_output_path(path, base_dir, "decomp.tar");
-                let decoder = ZlibDecoder::new(fs::File::open(path)?);
+                let decoder = ZlibDecoder::new(BufReader::new(safe_open_for_read(path)?));
                 return stream_to_file(decoder, &out_path);
             }
             _ => {}
@@ -252,16 +292,37 @@ fn make_output_path(path: &Path, base: Option<&Path>, extension: &str) -> PathBu
         let stem = path.file_stem().unwrap_or_default();
         b.join(stem).with_extension(extension)
     } else {
-        tempfile::NamedTempFile::new().unwrap().into_temp_path().to_path_buf()
+        std::env::temp_dir().join(format!(
+            "kingfisher-{}-{}-{}",
+            std::process::id(),
+            Uuid::new_v4(),
+            extension
+        ))
     }
 }
 
-/* ───────────────────────────────────────────────────────────── */
 pub fn decompress_file_to_temp(path: &Path) -> Result<(CompressedContent, TempDir)> {
     let temp_dir = tempdir()?;
-    let content = decompress_file(path, Some(temp_dir.path()))?;
+    let mut content = decompress_file(path, Some(temp_dir.path()))?;
 
-    if let CompressedContent::Archive(ref files) = content {
+    // if let CompressedContent::Archive(ref files) = content {
+    let mut prefix_for_replace = None;
+    if let Some(stem) = path.file_stem() {
+        let candidate = temp_dir.path().join(stem).with_extension("decomp.tar");
+        prefix_for_replace = Some(candidate);
+    }
+
+    if let CompressedContent::Archive(ref mut files) = content {
+        if let Some(prefix) = &prefix_for_replace {
+            let prefix_str = prefix.display().to_string();
+            for (name, _) in files.iter_mut() {
+                if let Some(rest) = name.strip_prefix(&prefix_str) {
+                    if let Some((_, suffix)) = rest.split_once('!') {
+                        *name = format!("{}!{}", path.display(), suffix);
+                    }
+                }
+            }
+        }
         for (name, data) in files {
             let rel = name.split_once('!').map(|(_, sub)| sub).unwrap_or(name);
             let p = temp_dir.path().join(rel.replace('\\', "/"));
@@ -269,6 +330,17 @@ pub fn decompress_file_to_temp(path: &Path) -> Result<(CompressedContent, TempDi
                 fs::create_dir_all(parent)?;
             }
             fs::write(p, data)?;
+        }
+    } else if let CompressedContent::ArchiveFiles(ref mut entries) = content {
+        if let Some(prefix) = &prefix_for_replace {
+            let prefix_str = prefix.display().to_string();
+            for (name, _) in entries.iter_mut() {
+                if let Some(rest) = name.strip_prefix(&prefix_str) {
+                    if let Some((_, suffix)) = rest.split_once('!') {
+                        *name = format!("{}!{}", path.display(), suffix);
+                    }
+                }
+            }
         }
     }
     Ok((content, temp_dir))
@@ -292,7 +364,7 @@ mod tests {
     fn smoke_decompress_tar_gz_archive() -> anyhow::Result<()> {
         let dir = tempdir()?;
         let tar_gz = dir.path().join("payload.tar.gz");
-        let github_pat = "ghp_1wuHFikBKQtCcH3EB2FBUkyn8krXhP2qLqPa"; // this is not a real secret
+        let github_pat = "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"; // this is not a real secret
 
         // build payload.tar.gz containing secret.txt
         {
@@ -345,7 +417,7 @@ mod tests {
     fn smoke_decompress_without_extract_archives() -> anyhow::Result<()> {
         let dir = tempdir()?;
         let tar_gz = dir.path().join("payload.tar.gz");
-        let github_pat = "ghp_1wuHFikBKQtCcH3EB2FBUkyn8krXhP2qLqPa";
+        let github_pat = "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";
 
         // ── build payload.tar.gz containing secret.txt ──────────────────────────────
         {

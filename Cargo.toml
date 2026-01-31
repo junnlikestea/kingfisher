@@ -1,6 +1,6 @@
 [workspace.package]
 edition = "2021"
-rust-version = "1.83"
+rust-version = "1.90"
 license = "Apache-2.0"
 authors = ["Mick Grove <mick.grove@mongodb.com>"]
 homepage = "https://github.com/mongodb/kingfisher"
@@ -10,7 +10,8 @@ publish = false
 
 [package]
 name = "kingfisher"
-version = "1.20.0"
+version = "1.76.0"
+description = "MongoDB's blazingly fast and accurate secret scanning and validation tool"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -19,18 +20,38 @@ homepage.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[package.metadata.deb]
+name = "kingfisher"
+maintainer = "Mick Grove <mick.grove@mongodb.com>"
+depends = "$auto"
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/kingfisher", "/usr/bin/kingfisher", "755"]
+]
+
+[package.metadata.generate-rpm]
+package = "kingfisher"
+summary = "MongoDB's blazingly fast and accurate secret scanning and validation tool"
+license = "Apache-2.0"
+url = "https://github.com/mongodb/kingfisher"
+assets = [
+    { source = "target/release/kingfisher", dest = "/usr/bin/kingfisher", mode = "755" }
+]
+
 [dependencies]
-clap = { version = "4.3", features = [
+clap = { version = "4.5", features = [
     "cargo",
     "derive",
     "env",
     "unicode",
     "wrap_help",
 ] }
+
 anyhow = "1.0"
-bstr = { version = "1.0", features = ["serde"] }
+bstr = { version = "1.12", features = ["serde"] }
 fixedbitset = "0.5"
-gix = { version = "0.72", features = ["max-performance", "serde", "blocking-network-client"] }
+gix = { version = "0.73", features = ["max-performance", "serde", "blocking-network-client"] }
 ignore = "0.4"
 petgraph = "0.6"
 roaring = "0.10"
@@ -41,131 +62,161 @@ smallvec = { version = "1", features = [
     "const_new",
     "union",
 ] }
-tracing = "0.1.41"
+tracing = "0.1.43"
 indicatif = { version = "0.17", features = ["improved_unicode"] }
-rayon = "1.10"
-sha1 = "0.10.6"
+rayon = "1.11"
 hex = "0.4.3"
 vectorscan-rs = "0.0.5"
-regex = "1.10.6"
-serde_json = "1.0.128"
+regex = "1.12.2"
+serde_json = "1.0.145"
 lazy_static = "1.5.0"
-url = "2.5.2"
+url = "2.5.7"
 include_dir = { version = "0.7", features = ["glob"] }
 strum = { version = "0.26", features = ["derive"] }
-sysinfo = "0.31.2"
+sysinfo = "0.31.4"
+webbrowser = "1.0.5"
 reqwest = { version = "0.12", default-features = false, features = [
-    "json", 
-    "gzip", 
-    "brotli", 
+    "json",
+    "gzip",
+    "brotli",
     "deflate", 
     "stream",
     "rustls-tls",
+    "rustls-tls-native-roots",
     "blocking",
     "multipart",
-    "rustls-tls",
 ] }
+axum = { version = "0.7", default-features = false, features = ["tokio", "http1"] }
 
 
-chrono = "0.4.38"
-thiserror = "1.0.63"
-tokio = { version = "1.39.2", features = ["full"] }
+chrono = "0.4.42"
+thiserror = "1.0.69"
+tokio = { version = "1.48.0", features = ["full"] }
 base64 = "0.22.1"
-crossbeam-channel = "0.5.13"
-indenter = "0.3.3"
+crossbeam-channel = "0.5.15"
+indenter = "0.3.4"
 serde-sarif = "0.4"
-console = "0.15.8"
-time = "0.3.36"
-tempfile = "3.12.0"
-num_cpus = "1.16.0"
-once_cell = "1.19.0"
-http = "1.1.0"
-liquid = "0.26.4"
-liquid-core = "0.26.4"
-flate2 = "1.0.33"
-brotli = "6.0.0"
+console = "0.15.11"
+time = "0.3.44"
+tempfile = "3.23.0"
+num_cpus = "1.17.0"
+once_cell = "1.21.3"
+http = "1.4.0"
+liquid = "0.26.11"
+liquid-core = "0.26.11"
+flate2 = "1.1"
 thousands = "0.2.0"
 base32 = "0.5.1"
 crossbeam-skiplist = "0.1.3"
 tokio-postgres = { version = "0.7", default-features = false, features = ["runtime"] }
-mongodb = { version = "3.2", default-features = false, features = ["rustls-tls", "aws-auth", "compat-3-0-0", "dns-resolver"] }
-bson = "2.13.0"
-ring = "0.17.8"
-pem = "3.0.4"
-aws-config = "1.5.10"
-aws-credential-types = "1.2.1"
-aws-sdk-sts = "1.21.0"
-aws-types = "1.3.3"
+mongodb = { version = "3.4", default-features = false, features = ["rustls-tls", "aws-auth", "compat-3-0-0", "dns-resolver"] }
+mysql_async = { version = "0.34.2", default-features = false, features = ["default-rustls"] }
+bson = "2.15.0"
+ring = "0.17.14"
+pem = "3.0.6"
+aws-config = "1.8.12"
+aws-credential-types = "1.2.11"
+aws-sdk-sts = "1.95.0"
+aws-types = "1.3.11"
 byteorder = "1.5.0"
-parking_lot = "0.12.3"
+parking_lot = "0.12.5"
 octorust =  "0.9.0"
-reqwest-middleware = "0.4.1"
-tracing-subscriber = {version = "0.3.19", features = ["env-filter"] }
-tracing-core = "0.1.33"
-tree-sitter = "0.24.4"
-tree-sitter-bash = "0.23.3"
-tree-sitter-c = "0.23.2"
+reqwest-middleware = "0.4.2"
+tracing-subscriber = {version = "0.3.22", features = ["env-filter"] }
+tracing-core = "0.1.35"
+tree-sitter = "0.25.10"
+aws-smithy-http-client = "1.1.5"
+aws-smithy-runtime-api = "1.9.3"
+aws-smithy-types = "1.3.5"
+tree-sitter-bash = "0.25.1"
+tree-sitter-c = "0.24.1"
 tree-sitter-c-sharp = "0.23.1"
 tree-sitter-cpp = "0.23.4"
-tree-sitter-css = "0.23.1"
+tree-sitter-css = "0.23.2"
 tree-sitter-go = "0.23.4"
 tree-sitter-html = "0.23.2"
-tree-sitter-java = "0.23.4"
+tree-sitter-java = "0.23.5"
 tree-sitter-javascript = "0.23.1"
 tree-sitter-php = "0.23.11"
-tree-sitter-python = "0.23.4"
+tree-sitter-python = "0.23.6"
 tree-sitter-ruby = "0.23.1"
-tree-sitter-rust = "0.23.2"
+tree-sitter-rust = "0.24.0"
 tree-sitter-toml-ng = "0.7.0"
 tree-sitter-typescript = "0.23.2"
-tree-sitter-yaml = "0.6.1"
+tree-sitter-yaml = "0.7.2"
 streaming-iterator = "0.1.9"
 tree-sitter-regex = "0.24.3"
+tree_magic_mini = "3.2"
 content_inspector = "0.2.4"
-rustc-hash = "2.1.0"
+rustc-hash = "2.1.1"
 term_size = "0.3.2"
-bzip2 = "0.5.0"
-zip = "2.2.2"
-tar = "0.4.43"
-xz2 = "0.1.7"
+bzip2-rs = "0.1.2"
+zip = { version = "2.4.2", default-features = false, features = ["deflate", "deflate64", "time"] }
+tar = "0.4.44"
+lzma-rs = "0.3.0"
 asar = "0.3.0"
-blake3 = "1.5.5"
-memmap2 = "0.9.5"
+blake3 = "1.8.2"
+memchr = "2.7"
+memmap2 = "0.9.9"
 futures = "0.3.31"
 dashmap = "6.1.0"
 xxhash-rust = { version = "0.8.15", features = ["xxh3", "const_xxh3"] }
 serde_yaml = "0.9.34"
 hmac = "0.12.1"
-sha2 = "0.10.8"
-strum_macros = "0.27.1"
-humantime = "2.2.0"
+sha2 = "0.10.9"
+strum_macros = "0.27.2"
+humantime = "2.3.0"
 path-dedot = "3.1.1"
-quick-xml = {version = "0.37.5", features = ["serde","serialize"] }
-rustls = "0.23.26"
+quick-xml = {version = "0.38.4", features = ["serde","serialize"] }
+rustls = "0.23.35"
 tokio-postgres-rustls = "0.13.0"
-rustls-native-certs = "0.8.1"
+rustls-native-certs = "0.8.2"
 predicates = "3.1.3"
-assert_cmd = "2.0.17"
-proptest = "1.6.0"
-color-backtrace = "0.7.0"
-gitlab = "0.1711.0"
-mimalloc = {version = "0.1.46", features = ["override"]}
-thread_local = "1.1.8"
-crc32fast = "1.4.2"
+assert_cmd = "2.1.1"
+proptest = "1.9.0"
+color-backtrace = "0.7.2"
+gitlab = "0.1801.0"
+mimalloc = {version = "0.1.48", features = ["override"]}
+thread_local = "1.1.9"
 bloomfilter = "3.0.1"
-uuid = "1.17.0"
-urlencoding = "2.1.3"
-rand = "0.9.1"
-percent-encoding = "2.3.1"
-trust-dns-resolver   = { version = "0.23.2", default-features = false, features = ["tokio-runtime"] }
+uuid = "1.19.0"
+rand = "0.9.2"
+percent-encoding = "2.3.2"
 atty = "0.2.14"
 self_update = { version = "0.42.0", default-features = false, features = ["rustls", "archive-tar", "archive-zip", "compression-flate2"] }
-semver = "1.0.26"
+semver = "1.0.27"
+globset = "0.4.18"
+jsonwebtoken = { version = "10.2.0", features = ["aws-lc-rs"] }
+ipnet = "2.11.0"
+gouqi = { version = "0.20.0", features = ["async"] }
+oci-client = { version = "0.15", default-features = false, features = ["rustls-tls"] }
+walkdir = "2.5.0"
+p256 = "0.13.2"
+ed25519-dalek = { version = "2.2", features = ["pkcs8"] }
+aws-sdk-s3 = "1.117.0"
+aws-sdk-iam = "1.101.0"
+aws-sdk-ec2 = "1.196.0"
+aws-sdk-dynamodb = "1.101.0"
+aws-sdk-lambda = "1.111.0"
+aws-sdk-kms = "1.97.0"
+aws-sdk-secretsmanager = "1.96.0"
+gcloud-storage = { version = "1.1.1", default-features = false, features = [
+    "rustls-tls",
+    "auth",
+    "jwt-aws-lc-rs",
+] }
+tokei = "12.1.2"
+crc32fast = "1.5.0"
+
+[target.'cfg(not(windows))'.dependencies]
+sha1 = { version = "0.10.6", features = ["asm"] }
+
+[target.'cfg(windows)'.dependencies]
+sha1 = "0.10.6"
 
 [dependencies.tikv-jemallocator]
 version = "0.6"
 optional = true
-
 
 [features]
 default       = ["use-mimalloc"]         
@@ -174,15 +225,16 @@ use-jemalloc  = ["tikv-jemallocator"]
 system-alloc  = []                # forces System allocator
 
 [dev-dependencies]
-pretty_assertions = "1.3"
+pretty_assertions = "1.4"
 temp-env = "0.3.6"
-wiremock = "0.6.2"
-git2 = "0.20.2"
+wiremock = "0.6.5"
+git2 = "0.20.3"
 rand_chacha = "0.9.0"
+testcontainers = "0.15.0"
 
 [profile.release]
 debug = false
-strip = "debuginfo"
+strip = true #"debuginfo"
 opt-level = 3           # Maximum optimization for performance
 lto = true              # Enable Link Time Optimization
 codegen-units = 1       # Optimize for size but slower compilation

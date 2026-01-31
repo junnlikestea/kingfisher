@@ -1,4 +1,5 @@
 use core::ops::Range;
+use std::cell::RefCell;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -87,25 +88,35 @@ impl std::fmt::Display for SourceSpan {
 }
 
 /// Records newline byte‑offsets to map offsets -- (line, column).
-pub struct LocationMapping {
-    newline_offsets: Vec<usize>,
+pub struct LocationMapping<'a> {
+    bytes: &'a [u8],
+    newline_offsets: RefCell<Vec<usize>>,
 }
 
-impl LocationMapping {
-    /// Scan once for all `\n` positions.
-    pub fn new(input: &[u8]) -> Self {
-        let newline_offsets =
-            input.iter().enumerate().filter_map(|(i, &b)| (b == b'\n').then_some(i)).collect();
-        LocationMapping { newline_offsets }
+impl<'a> LocationMapping<'a> {
+    /// Create a new mapping without pre-scanning the entire input.
+    pub fn new(input: &'a [u8]) -> Self {
+        LocationMapping { bytes: input, newline_offsets: RefCell::new(Vec::new()) }
     }
 
-    /// Map a byte offset to a `SourcePoint`.
-    pub fn get_source_point(&self, offset: usize) -> SourcePoint {
-        let line = match self.newline_offsets.binary_search(&offset) {
-            Ok(idx) => idx + 2, // exact newline -- next line
+    fn ensure_offsets_up_to(&self, offset: usize) {
+        let mut offsets = self.newline_offsets.borrow_mut();
+        let start = offsets.last().map_or(0, |&last| last + 1);
+        if offset < start {
+            return;
+        }
+        let end = offset.min(self.bytes.len());
+        for nl in memchr::memchr_iter(b'\n', &self.bytes[start..end]) {
+            offsets.push(start + nl);
+        }
+    }
+
+    fn source_point_from_offsets(offsets: &[usize], offset: usize) -> SourcePoint {
+        let line = match offsets.binary_search(&offset) {
+            Ok(idx) => idx + 2,
             Err(idx) => idx + 1,
         };
-        let column = if let Some(&last) = self.newline_offsets.get(line.saturating_sub(2)) {
+        let column = if let Some(&last) = offsets.get(line.saturating_sub(2)) {
             offset.saturating_sub(last + 1)
         } else {
             offset
@@ -113,17 +124,129 @@ impl LocationMapping {
         SourcePoint { line, column }
     }
 
+    /// Map a byte offset to a `SourcePoint`.
+    pub fn get_source_point(&self, offset: usize) -> SourcePoint {
+        self.ensure_offsets_up_to(offset);
+        let offsets = self.newline_offsets.borrow();
+        Self::source_point_from_offsets(&offsets, offset)
+    }
+
     /// Map an `OffsetSpan` -- `SourceSpan` (closed interval).
     pub fn get_source_span(&self, span: &OffsetSpan) -> SourceSpan {
-        let start = self.get_source_point(span.start);
-        let end = self.get_source_point(span.end.saturating_sub(1));
+        self.ensure_offsets_up_to(span.end.saturating_sub(1));
+        let offsets = self.newline_offsets.borrow();
+        let start = Self::source_point_from_offsets(&offsets, span.start);
+        let end = Self::source_point_from_offsets(&offsets, span.end.saturating_sub(1));
         SourceSpan { start, end }
     }
 }
 
+/// Compact representation of a source span to reduce per-match footprint while
+/// still being able to materialize full line/column data on demand.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
+pub struct CompactSourceSpan {
+    pub start_line: u32,
+    pub start_column: u32,
+    pub end_line: u32,
+    pub end_column: u32,
+}
+
+impl CompactSourceSpan {
+    #[inline]
+    fn zero() -> Self {
+        Self { start_line: 0, start_column: 0, end_line: 0, end_column: 0 }
+    }
+
+    #[inline]
+    fn from_source_span(span: &SourceSpan) -> Self {
+        Self {
+            start_line: span.start.line.try_into().unwrap_or(0),
+            start_column: span.start.column.try_into().unwrap_or(0),
+            end_line: span.end.line.try_into().unwrap_or(0),
+            end_column: span.end.column.try_into().unwrap_or(0),
+        }
+    }
+
+    #[inline]
+    fn to_source_span(self) -> SourceSpan {
+        SourceSpan {
+            start: SourcePoint {
+                line: usize::try_from(self.start_line).unwrap_or(0),
+                column: usize::try_from(self.start_column).unwrap_or(0),
+            },
+            end: SourcePoint {
+                line: usize::try_from(self.end_line).unwrap_or(0),
+                column: usize::try_from(self.end_column).unwrap_or(0),
+            },
+        }
+    }
+}
+
 /// Combined byte‑ and source‑span.
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct Location {
     pub offset_span: OffsetSpan,
-    pub source_span: SourceSpan,
+    #[serde(
+        default,
+        serialize_with = "serialize_compact_source_span",
+        deserialize_with = "deserialize_compact_source_span"
+    )]
+    #[schemars(with = "SourceSpan")]
+    pub source_span: Option<CompactSourceSpan>,
+}
+
+impl serde::Serialize for Location {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+
+        let mut state = serializer.serialize_struct("Location", 2)?;
+        state.serialize_field("offset_span", &self.offset_span)?;
+        let source_span = self.source_span().unwrap_or_else(CompactSourceSpan::zero);
+        state.serialize_field("source_span", &source_span.to_source_span())?;
+        state.end()
+    }
+}
+
+impl Location {
+    #[inline]
+    pub fn with_source_span(offset_span: OffsetSpan, source_span: Option<SourceSpan>) -> Self {
+        Self {
+            offset_span,
+            source_span: source_span.as_ref().map(CompactSourceSpan::from_source_span),
+        }
+    }
+
+    #[inline]
+    pub fn source_span(&self) -> Option<CompactSourceSpan> {
+        self.source_span
+    }
+
+    #[inline]
+    pub fn resolved_source_span(&self) -> SourceSpan {
+        self.source_span.unwrap_or_else(CompactSourceSpan::zero).to_source_span()
+    }
+}
+
+fn serialize_compact_source_span<S>(
+    span: &Option<CompactSourceSpan>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let source_span = span.unwrap_or_else(CompactSourceSpan::zero).to_source_span();
+    source_span.serialize(serializer)
+}
+
+fn deserialize_compact_source_span<'de, D>(
+    deserializer: D,
+) -> Result<Option<CompactSourceSpan>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let span = SourceSpan::deserialize(deserializer)?;
+    Ok(Some(CompactSourceSpan::from_source_span(&span)))
 }

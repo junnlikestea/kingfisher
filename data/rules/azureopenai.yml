@@ -14,6 +14,9 @@ rules:
         [a-f0-9]{32}
       )
       \b
+    pattern_requirements:
+      min_digits: 2
+      min_lowercase: 2
     min_entropy: 3.5
     confidence: medium
     examples:
@@ -46,7 +49,7 @@ rules:
       (?xi)
       \b
       (
-        [a-z0-9-]+
+        [a-z0-9-]{3,32}
         \.openai\.azure\.com
       )
       \b

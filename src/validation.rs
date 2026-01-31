@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fs,
     hash::{Hash, Hasher},
     sync::Arc,
@@ -11,42 +12,117 @@ use dashmap::DashMap;
 use http::StatusCode;
 use liquid::Object;
 use liquid_core::{Value, ValueView};
-use once_cell::sync::OnceCell;
+use once_cell::sync::{Lazy, OnceCell};
 use reqwest::{header, header::HeaderValue, multipart, Client, Url};
 use rustc_hash::FxHashMap;
 use tokio::{sync::Notify, time};
-use tracing::debug;
+use tracing::{debug, trace};
 
 use crate::{
     location::OffsetSpan,
     matcher::{OwnedBlobMatch, SerializableCaptures},
     rules::rule::Validation,
+    validation_body::{self, ValidationResponseBody},
 };
 
 mod aws;
 mod azure;
-mod gcp;
+mod coinbase;
+pub mod gcp;
 mod httpvalidation;
+mod jdbc;
+mod jwt;
 mod mongodb;
+mod mysql;
 mod postgres;
-mod utils;
+pub use mysql::validate_mysql;
+pub use postgres::validate_postgres;
+pub mod utils;
 
 const VALIDATION_CACHE_SECONDS: u64 = 1200; // 20 minutes
 const MAX_VALIDATION_BODY_LEN: usize = 2048;
 
+fn truncate_to_char_boundary(s: &mut String, max_len: usize) {
+    if s.len() <= max_len {
+        return;
+    }
+
+    let mut new_len = max_len;
+    while new_len > 0 && !s.is_char_boundary(new_len) {
+        new_len -= 1;
+    }
+
+    s.truncate(new_len);
+}
+
+static USER_AGENT_SUFFIX: OnceCell<String> = OnceCell::new();
+
+const BROWSER_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
+         AppleWebKit/537.36 (KHTML, like Gecko) \
+         Chrome/140.0.0.0 Safari/537.36";
+
+fn build_user_agent() -> String {
+    let base = format!("{}/{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+    if let Some(suffix) = USER_AGENT_SUFFIX.get() {
+        format!("{base} {suffix} {BROWSER_USER_AGENT}")
+    } else {
+        format!("{base} {BROWSER_USER_AGENT}")
+    }
+}
+
+pub static GLOBAL_USER_AGENT: Lazy<String> = Lazy::new(build_user_agent);
+
+/// Configure a user-agent suffix that is appended after the Kingfisher package name/version.
+///
+/// The suffix is inserted before the browser portion of the user-agent. Empty or whitespace-only
+/// values are ignored. This should be called once near program start prior to accessing
+/// [`GLOBAL_USER_AGENT`].
+pub fn set_user_agent_suffix<S: Into<String>>(suffix: Option<S>) {
+    if let Some(suffix) = suffix {
+        let trimmed = suffix.into().trim().to_string();
+        if trimmed.is_empty() {
+            return;
+        }
+
+        let _ = USER_AGENT_SUFFIX.set(trimmed);
+    }
+}
+
 // Use SkipMap-based cache instead of a mutex-wrapped FxHashMap.
 type Cache = Arc<SkipMap<String, CachedResponse>>;
 
-/// Returns an opaque 64-bit fingerprint for “same secret under the same rule”.
-fn secret_fingerprint(m: &OwnedBlobMatch) -> u64 {
+/// Returns an opaque 64-bit key for internal validation deduplication.
+///
+/// This is an INTERNAL key used only for validation deduplication within a single scan.
+/// It uses `captures.get(0)` to get the primary secret value.
+///
+/// **Important**: This is distinct from the EXTERNAL `finding_fingerprint` used for:
+/// - Baseline comparisons across scans
+/// - Deduplication entries in external systems
+/// - Reporting output
+///
+/// The external fingerprint uses `get(1).or_else(get(0))` for backward compatibility
+/// and must remain stable. This internal key can evolve independently.
+fn validation_dedup_key(m: &OwnedBlobMatch) -> u64 {
     let mut hasher = xxhash_rust::xxh3::Xxh3::new();
     m.rule.syntax().id.hash(&mut hasher);
 
-    // first capture = the secret text itself
-    if let Some(c0) = m.captures.captures.get(0) {
-        c0.value.hash(&mut hasher);
+    // Use the first capture (primary secret) for deduplication.
+    // Note: capture_value is stored in a variable because it's also used in trace! below.
+    let capture_value = m.captures.captures.get(0).map(|c| c.raw_value());
+    if let Some(val) = capture_value {
+        val.hash(&mut hasher);
     }
-    hasher.finish()
+    let key = hasher.finish();
+
+    trace!(
+        rule_id = %m.rule.syntax().id,
+        capture_value = ?capture_value,
+        validation_dedup_key = key,
+        "Computed internal validation dedup key"
+    );
+
+    key
 }
 
 static VALIDATION_CACHE: OnceCell<DashMap<u64, CachedResponse>> = OnceCell::new();
@@ -56,47 +132,42 @@ static IN_FLIGHT: OnceCell<DashMap<u64, Arc<Notify>>> = OnceCell::new();
 pub fn init_validation_caches() {
     VALIDATION_CACHE.set(DashMap::new()).ok();
     IN_FLIGHT.set(DashMap::new()).ok();
+    aws::set_aws_validation_concurrency(15);
 }
 
-// #[derive(Clone, FilterReflection, ParseFilter)]
-// #[filter(
-//     name = "b64enc",
-//     description = "Encodes the input string using Base64 encoding",
-//     parsed(B64EncFilter)
-// )]
-// pub struct B64EncFilterParser;
+pub fn set_skip_aws_account_ids<I, S>(ids: I)
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    aws::set_aws_skip_account_ids(ids);
+}
 
-// #[derive(Debug, Default, Clone)]
-// pub struct B64EncFilter;
+/// Returns `true` if the provided string can be parsed as a MongoDB connection URI.
+pub fn is_parseable_mongodb_uri(uri: &str) -> bool {
+    mongodb::looks_like_mongodb_uri(uri)
+}
 
-// impl std::fmt::Display for B64EncFilter {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         write!(f, "b64enc")
-//     }
-// }
+/// Returns `true` if the provided string can be parsed as a Postgres connection URI.
+pub fn is_parseable_postgres_uri(uri: &str) -> bool {
+    postgres::parse_postgres_url(uri).is_ok()
+}
 
-// impl Filter for B64EncFilter {
-//     fn evaluate(
-//         &self,
-//         input: &dyn ValueView,
-//         _runtime: &dyn Runtime,
-//     ) -> Result<Value, LiquidError> {
-//         let input_str = input.to_kstr().into_owned();
-//         let encoded = general_purpose::STANDARD.encode(input_str.as_bytes());
-//         Ok(Value::scalar(encoded))
-//     }
-// }
+/// Returns `true` if the provided string can be parsed as a MySQL connection URI.
+pub fn is_parseable_mysql_uri(uri: &str) -> bool {
+    mysql::parse_mysql_url(uri).is_ok()
+}
 
 #[derive(Clone)]
 pub struct CachedResponse {
-    pub body: String,
+    pub body: ValidationResponseBody,
     pub status: StatusCode,
     pub is_valid: bool,
     pub timestamp: Instant,
 }
 
 impl CachedResponse {
-    pub fn new(body: String, status: StatusCode, is_valid: bool) -> Self {
+    pub fn new(body: ValidationResponseBody, status: StatusCode, is_valid: bool) -> Self {
         Self { body, status, is_valid, timestamp: Instant::now() }
     }
 
@@ -122,17 +193,22 @@ pub fn collect_variables_and_dependencies(
 
             if !matching_dependencies.is_empty() {
                 for other_match in matching_dependencies {
+                    // VALIDATION: Use get(0) for the primary capture value when collecting
+                    // dependent variables. This ensures we get the main captured value rather
+                    // than inner unnamed groups from nested captures like (?<REGEX>...(ABC)...).
+                    //
+                    // Note: This differs from fingerprint/reporting code which uses
+                    // get(1).or_else(get(0)) for backward compatibility.
                     let matching_input = other_match
                         .captures
                         .captures
-                        .get(1)
-                        .or_else(|| other_match.captures.captures.get(0))
+                        .get(0)
                         .expect("Expected at least one capture");
                     variable_map
                         .entry(dependency.variable.to_uppercase())
                         .or_insert_with(Vec::new)
                         .push((
-                            matching_input.value.to_string(),
+                            matching_input.raw_value().to_string(),
                             other_match.matching_input_offset_span,
                         ));
                 }
@@ -166,7 +242,7 @@ async fn render_and_parse_url(
 
     // Check if the URL is resolvable.
     utils::check_url_resolvable(&url).await.map_err(|e| {
-        let error_msg = format!("URL resolution failed: {}", e);
+        let error_msg = format!("URL <{}> resolution failed: {}", &url, e);
         error_msg
     })?;
 
@@ -196,7 +272,7 @@ async fn render_template(
         })
 }
 
-/// Validate a single match with a timeout of 60 seconds.
+/// Validate a single match with a configurable timeout.
 pub async fn validate_single_match(
     m: &mut OwnedBlobMatch,
     parser: &liquid::Parser,
@@ -204,8 +280,10 @@ pub async fn validate_single_match(
     dependent_variables: &FxHashMap<String, Vec<(String, OffsetSpan)>>,
     missing_dependencies: &FxHashMap<String, Vec<String>>,
     cache: &Cache,
+    validation_timeout: Duration,
+    validation_retries: u32,
 ) {
-    let timeout_result = time::timeout(Duration::from_secs(60), async {
+    let timeout_result = time::timeout(validation_timeout, async {
         timed_validate_single_match(
             m,
             parser,
@@ -213,6 +291,8 @@ pub async fn validate_single_match(
             dependent_variables,
             missing_dependencies,
             cache,
+            validation_timeout,
+            validation_retries,
         )
         .await
     })
@@ -220,7 +300,10 @@ pub async fn validate_single_match(
 
     if timeout_result.is_err() {
         m.validation_success = false;
-        m.validation_response_body = "Validation timed out after 60 seconds".to_string();
+        m.validation_response_body = validation_body::from_string(format!(
+            "Validation timed out after {} seconds",
+            validation_timeout.as_secs()
+        ));
         m.validation_response_status = StatusCode::REQUEST_TIMEOUT;
     }
 }
@@ -235,11 +318,13 @@ async fn timed_validate_single_match<'a>(
     dependent_variables: &FxHashMap<String, Vec<(String, OffsetSpan)>>,
     missing_dependencies: &FxHashMap<String, Vec<String>>,
     cache: &Cache,
+    validation_timeout: Duration,
+    validation_retries: u32,
 ) {
     // ──────────────────────────────────────────────────────────
     // 1. process-wide fingerprint de-dup
     // ──────────────────────────────────────────────────────────
-    let fp = secret_fingerprint(m);
+    let fp = validation_dedup_key(m);
 
     if let Some(entry) = VALIDATION_CACHE.get_or_init(DashMap::new).get(&fp) {
         if entry.timestamp.elapsed() < Duration::from_secs(VALIDATION_CACHE_SECONDS) {
@@ -281,8 +366,10 @@ async fn timed_validate_single_match<'a>(
     if let Some(missing) = missing_dependencies.get(&m.rule.syntax().id) {
         if !missing.is_empty() {
             m.validation_success = false;
-            m.validation_response_body =
-                format!("Validation skipped – missing dependent rules: {}", missing.join(", "));
+            m.validation_response_body = validation_body::from_string(format!(
+                "Validation skipped - missing dependent rules: {}",
+                missing.join(", ")
+            ));
             m.validation_response_status = StatusCode::PRECONDITION_REQUIRED;
             commit_and_return(m);
             return;
@@ -295,7 +382,8 @@ async fn timed_validate_single_match<'a>(
         Ok(_) => utils::process_captures(&m.captures),
         Err(e) => {
             m.validation_success = false;
-            m.validation_response_body = format!("Regex error: {}", e);
+            m.validation_response_body =
+                validation_body::from_string(format!("Regex error: {}", e));
             m.validation_response_status = StatusCode::INTERNAL_SERVER_ERROR;
             commit_and_return(m);
             return;
@@ -305,6 +393,10 @@ async fn timed_validate_single_match<'a>(
     for dep in m.rule.syntax().depends_on_rule.iter().flatten() {
         if let Some(vals) = dependent_variables.get(&dep.variable.to_uppercase()) {
             for (val, span) in vals {
+                // Skip adding captured values for TOKEN dependencies
+                if dep.variable.eq_ignore_ascii_case("TOKEN") {
+                    continue;
+                }
                 captured_values.push((
                     dep.variable.to_uppercase(),
                     val.clone(),
@@ -316,9 +408,7 @@ async fn timed_validate_single_match<'a>(
     }
 
     let mut globals = Object::new();
-    for (k, v, ..) in &captured_values {
-        globals.insert(k.to_uppercase().into(), Value::scalar(v.clone()));
-    }
+    populate_globals_from_captures(&mut globals, &captured_values);
 
     let rule_syntax = m.rule.syntax();
 
@@ -328,6 +418,9 @@ async fn timed_validate_single_match<'a>(
     match &rule_syntax.validation {
         // ---------------------------------------------------- HTTP validator
         Some(Validation::Http(http_validation)) => {
+            let request_timeout = validation_timeout;
+            let multipart_timeout = validation_timeout;
+            let max_retries: u32 = validation_retries;
             // render URL
             let url = match render_and_parse_url(
                 parser,
@@ -340,7 +433,7 @@ async fn timed_validate_single_match<'a>(
                 Ok(u) => u,
                 Err(e) => {
                     m.validation_success = false;
-                    m.validation_response_body = e;
+                    m.validation_response_body = validation_body::from_string(e);
                     m.validation_response_status = StatusCode::BAD_REQUEST;
                     commit_and_return(m);
                     return;
@@ -354,13 +447,14 @@ async fn timed_validate_single_match<'a>(
                 &url,
                 &http_validation.request.headers,
                 &http_validation.request.body,
+                request_timeout,
                 parser,
                 &globals,
             ) {
                 Ok(rb) => rb,
                 Err(e) => {
                     m.validation_success = false;
-                    m.validation_response_body = e;
+                    m.validation_response_body = validation_body::from_string(e);
                     m.validation_response_status = StatusCode::BAD_REQUEST;
                     commit_and_return(m);
                     return;
@@ -372,10 +466,35 @@ async fn timed_validate_single_match<'a>(
 
             // old per-request cache (optional)
             if !is_multipart {
+                let rendered_headers = httpvalidation::process_headers(
+                    &http_validation.request.headers,
+                    parser,
+                    &globals,
+                    &url,
+                )
+                .unwrap_or_default();
+
+                let mut header_map = BTreeMap::new();
+                for (name, value) in rendered_headers.iter() {
+                    if let Ok(v) = value.to_str() {
+                        header_map.insert(name.as_str().to_string(), v.to_string());
+                    }
+                }
+
+                // Render the body template to include in cache key
+                let rendered_body =
+                    http_validation.request.body.as_ref().and_then(|body_template| {
+                        parser
+                            .parse(body_template)
+                            .ok()
+                            .and_then(|template| template.render(&globals).ok())
+                    });
+
                 cache_key = httpvalidation::generate_http_cache_key_parts(
                     http_validation.request.method.as_str(),
                     &url,
-                    &http_validation.request.headers,
+                    &header_map,
+                    rendered_body.as_deref(),
                 );
                 if let Some(cached) = cache.get(&cache_key) {
                     let c = cached.value();
@@ -393,7 +512,7 @@ async fn timed_validate_single_match<'a>(
             let exec_single = |builder: reqwest::RequestBuilder| async {
                 httpvalidation::retry_request(
                     builder,
-                    1,
+                    max_retries,
                     Duration::from_millis(500),
                     Duration::from_secs(2),
                 )
@@ -408,7 +527,7 @@ async fn timed_validate_single_match<'a>(
                         .unwrap_or(reqwest::Method::GET);
 
                     let mut fresh_builder =
-                        client.request(method, url.clone()).timeout(Duration::from_secs(5));
+                        client.request(method, url.clone()).timeout(multipart_timeout);
 
                     if let Ok(mut headers) = httpvalidation::process_headers(
                         &http_validation.request.headers,
@@ -417,16 +536,8 @@ async fn timed_validate_single_match<'a>(
                         &url,
                     ) {
                         // add realistic UA & accept headers
-                        let ua = format!(
-                            "{} {}/{}",
-                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
-                             AppleWebKit/537.36 (KHTML, like Gecko) \
-                             Chrome/132.0.0.0 Safari/537.36",
-                            env!("CARGO_PKG_NAME"),
-                            env!("CARGO_PKG_VERSION")
-                        );
                         let std_headers = [
-                            (header::USER_AGENT, ua.as_str()),
+                            (header::USER_AGENT, GLOBAL_USER_AGENT.as_str()),
                             (header::ACCEPT , "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"),
                             (header::ACCEPT_LANGUAGE, "en-US,en;q=0.5"),
                             (header::ACCEPT_ENCODING, "gzip, deflate, br"),
@@ -485,7 +596,7 @@ async fn timed_validate_single_match<'a>(
 
                 httpvalidation::retry_multipart_request(
                     build_request,
-                    1,
+                    max_retries as usize,
                     Duration::from_millis(500),
                     Duration::from_secs(2),
                 )
@@ -503,18 +614,20 @@ async fn timed_validate_single_match<'a>(
                         Ok(b) => b,
                         Err(e) => {
                             m.validation_success = false;
-                            m.validation_response_body = format!("Error reading response: {}", e);
+                            m.validation_response_body = validation_body::from_string(format!(
+                                "Error reading response: {}",
+                                e
+                            ));
                             m.validation_response_status = StatusCode::BAD_GATEWAY;
                             commit_and_return(m);
                             return;
                         }
                     };
-                    if body.len() > MAX_VALIDATION_BODY_LEN {
-                        body.truncate(MAX_VALIDATION_BODY_LEN);
-                    }
+                    truncate_to_char_boundary(&mut body, MAX_VALIDATION_BODY_LEN);
 
                     m.validation_response_status = status;
-                    m.validation_response_body = body.clone();
+                    let body_opt = validation_body::from_string(body.clone());
+                    m.validation_response_body = body_opt.clone();
                     let matchers = http_validation
                         .request
                         .response_matcher
@@ -533,7 +646,7 @@ async fn timed_validate_single_match<'a>(
                         cache.insert(
                             cache_key,
                             CachedResponse {
-                                body,
+                                body: body_opt,
                                 status,
                                 is_valid: m.validation_success,
                                 timestamp: Instant::now(),
@@ -543,7 +656,8 @@ async fn timed_validate_single_match<'a>(
                 }
                 Err(e) => {
                     m.validation_success = false;
-                    m.validation_response_body = format!("HTTP error: {:?}", e);
+                    m.validation_response_body =
+                        validation_body::from_string(format!("HTTP error: {:?}", e));
                     m.validation_response_status = StatusCode::BAD_GATEWAY;
                 }
             }
@@ -559,30 +673,98 @@ async fn timed_validate_single_match<'a>(
 
             if uri.is_empty() {
                 m.validation_success = false;
-                m.validation_response_body = "MongoDB URI not found.".to_string();
+                m.validation_response_body =
+                    validation_body::from_string("MongoDB URI not found.".to_string());
                 m.validation_response_status = StatusCode::BAD_REQUEST;
                 commit_and_return(m);
                 return;
             }
 
+            let cache_key = mongodb::generate_mongodb_cache_key(&uri);
+            if let Some(cached) = cache.get(&cache_key) {
+                let c = cached.value();
+                if c.timestamp.elapsed() < Duration::from_secs(VALIDATION_CACHE_SECONDS) {
+                    m.validation_success = c.is_valid;
+                    m.validation_response_body = c.body.clone();
+                    m.validation_response_status = c.status;
+                    commit_and_return(m);
+                    return;
+                }
+            }
+
             match mongodb::validate_mongodb(&uri).await {
-                Ok(ok) => {
+                Ok((ok, msg)) => {
                     m.validation_success = ok;
-                    m.validation_response_body = if ok {
-                        "MongoDB connection is valid."
-                    } else {
-                        "MongoDB connection failed."
-                    }
-                    .to_string();
+                    m.validation_response_body = validation_body::from_string(msg);
                     m.validation_response_status =
                         if ok { StatusCode::OK } else { StatusCode::UNAUTHORIZED };
                 }
                 Err(e) => {
                     m.validation_success = false;
-                    m.validation_response_body = format!("MongoDB validation error: {}", e);
+                    m.validation_response_body =
+                        validation_body::from_string(format!("MongoDB validation error: {}", e));
                     m.validation_response_status = StatusCode::BAD_GATEWAY;
                 }
             }
+        }
+
+        // ---------------------------------------------------- MySQL validator
+        Some(Validation::MySQL) => {
+            let mysql_url = globals
+                .get("TOKEN")
+                .and_then(|v| v.as_scalar())
+                .map(|s| s.into_owned().to_kstr().to_string())
+                .unwrap_or_default();
+
+            if mysql_url.is_empty() {
+                m.validation_success = false;
+                m.validation_response_body =
+                    validation_body::from_string("MySQL URL not found.".to_string());
+                m.validation_response_status = StatusCode::BAD_REQUEST;
+                commit_and_return(m);
+                return;
+            }
+
+            let cache_key = mysql::generate_mysql_cache_key(&mysql_url);
+            if let Some(cached) = cache.get(&cache_key) {
+                let c = cached.value();
+                if c.timestamp.elapsed() < Duration::from_secs(VALIDATION_CACHE_SECONDS) {
+                    m.validation_success = c.is_valid;
+                    m.validation_response_body = c.body.clone();
+                    m.validation_response_status = c.status;
+                    commit_and_return(m);
+                    return;
+                }
+            }
+
+            match mysql::validate_mysql(&mysql_url).await {
+                Ok((ok, meta)) => {
+                    m.validation_success = ok;
+                    m.validation_response_body = validation_body::from_string(if ok {
+                        format!("MySQL connection is valid. Metadata: {:?}", meta)
+                    } else {
+                        "MySQL connection failed.".to_string()
+                    });
+                    m.validation_response_status =
+                        if ok { StatusCode::OK } else { StatusCode::UNAUTHORIZED };
+                }
+                Err(e) => {
+                    m.validation_success = false;
+                    m.validation_response_body =
+                        validation_body::from_string(format!("MySQL error: {}", e));
+                    m.validation_response_status = StatusCode::BAD_GATEWAY;
+                }
+            }
+
+            cache.insert(
+                cache_key,
+                CachedResponse {
+                    body: m.validation_response_body.clone(),
+                    status: m.validation_response_status,
+                    is_valid: m.validation_success,
+                    timestamp: Instant::now(),
+                },
+            );
         }
 
         // ------------------------------------------------ Azure Storage validator
@@ -598,7 +780,9 @@ async fn timed_validate_single_match<'a>(
 
             if storage_account.is_empty() || storage_key.is_empty() {
                 m.validation_success = false;
-                m.validation_response_body = "Missing Azure Storage account or key.".to_string();
+                m.validation_response_body = validation_body::from_string(
+                    "Missing Azure Storage account or key.".to_string(),
+                );
                 m.validation_response_status = StatusCode::BAD_REQUEST;
                 commit_and_return(m);
                 return;
@@ -630,10 +814,65 @@ async fn timed_validate_single_match<'a>(
                 }
                 Err(e) => {
                     m.validation_success = false;
-                    m.validation_response_body = format!("Azure Storage error: {}", e);
+                    m.validation_response_body =
+                        validation_body::from_string(format!("Azure Storage error: {}", e));
                     m.validation_response_status = StatusCode::BAD_GATEWAY;
                 }
             }
+            cache.insert(
+                cache_key,
+                CachedResponse {
+                    body: m.validation_response_body.clone(),
+                    status: m.validation_response_status,
+                    is_valid: m.validation_success,
+                    timestamp: Instant::now(),
+                },
+            );
+        }
+
+        // ---------------------------------------------------- JDBC validator
+        Some(Validation::Jdbc) => {
+            let jdbc_conn = captured_values
+                .iter()
+                .find(|(n, ..)| n == "TOKEN")
+                .map(|(_, v, ..)| v.clone())
+                .unwrap_or_default();
+
+            if jdbc_conn.is_empty() {
+                m.validation_success = false;
+                m.validation_response_body =
+                    validation_body::from_string("JDBC connection string not found.".to_string());
+                m.validation_response_status = StatusCode::BAD_REQUEST;
+                commit_and_return(m);
+                return;
+            }
+
+            let cache_key = jdbc::generate_jdbc_cache_key(&jdbc_conn);
+            if let Some(cached) = cache.get(&cache_key) {
+                let c = cached.value();
+                if c.timestamp.elapsed() < Duration::from_secs(VALIDATION_CACHE_SECONDS) {
+                    m.validation_success = c.is_valid;
+                    m.validation_response_body = c.body.clone();
+                    m.validation_response_status = c.status;
+                    commit_and_return(m);
+                    return;
+                }
+            }
+
+            match jdbc::validate_jdbc(&jdbc_conn).await {
+                Ok(outcome) => {
+                    m.validation_success = outcome.valid;
+                    m.validation_response_body = validation_body::from_string(outcome.message);
+                    m.validation_response_status = outcome.status;
+                }
+                Err(e) => {
+                    m.validation_success = false;
+                    m.validation_response_body =
+                        validation_body::from_string(format!("JDBC validation error: {}", e));
+                    m.validation_response_status = StatusCode::BAD_GATEWAY;
+                }
+            }
+
             cache.insert(
                 cache_key,
                 CachedResponse {
@@ -655,7 +894,8 @@ async fn timed_validate_single_match<'a>(
 
             if pg_url.is_empty() {
                 m.validation_success = false;
-                m.validation_response_body = "Postgres URL not found.".to_string();
+                m.validation_response_body =
+                    validation_body::from_string("Postgres URL not found.".to_string());
                 m.validation_response_status = StatusCode::BAD_REQUEST;
                 commit_and_return(m);
                 return;
@@ -676,17 +916,18 @@ async fn timed_validate_single_match<'a>(
             match postgres::validate_postgres(&pg_url).await {
                 Ok((ok, meta)) => {
                     m.validation_success = ok;
-                    m.validation_response_body = if ok {
+                    m.validation_response_body = validation_body::from_string(if ok {
                         format!("Postgres connection is valid. Metadata: {:?}", meta)
                     } else {
                         "Postgres connection failed.".to_string()
-                    };
+                    });
                     m.validation_response_status =
                         if ok { StatusCode::OK } else { StatusCode::UNAUTHORIZED };
                 }
                 Err(e) => {
                     m.validation_success = false;
-                    m.validation_response_body = format!("Postgres error: {}", e);
+                    m.validation_response_body =
+                        validation_body::from_string(format!("Postgres error: {}", e));
                     m.validation_response_status = StatusCode::BAD_GATEWAY;
                 }
             }
@@ -700,7 +941,38 @@ async fn timed_validate_single_match<'a>(
                 },
             );
         }
+        // ---------------------------------------------------- JWT validator
+        Some(Validation::JWT) => {
+            let token = captured_values
+                .iter()
+                .find(|(n, ..)| n == "TOKEN")
+                .map(|(_, v, ..)| v.clone())
+                .unwrap_or_default();
 
+            if token.is_empty() {
+                m.validation_success = false;
+                m.validation_response_body =
+                    validation_body::from_string("JWT token not found.".to_string());
+                m.validation_response_status = StatusCode::BAD_REQUEST;
+                commit_and_return(m);
+                return;
+            }
+
+            match jwt::validate_jwt(&token).await {
+                Ok((ok, msg)) => {
+                    m.validation_success = ok;
+                    m.validation_response_body = validation_body::from_string(msg);
+                    m.validation_response_status =
+                        if ok { StatusCode::OK } else { StatusCode::UNAUTHORIZED };
+                }
+                Err(e) => {
+                    m.validation_success = false;
+                    m.validation_response_body =
+                        validation_body::from_string(format!("JWT validation error: {}", e));
+                    m.validation_response_status = StatusCode::BAD_REQUEST;
+                }
+            }
+        }
         // ---------------------------------------------------- AWS validator
         Some(Validation::AWS) => {
             let secret = captured_values
@@ -713,7 +985,9 @@ async fn timed_validate_single_match<'a>(
 
             if akid.is_empty() || secret.is_empty() {
                 m.validation_success = false;
-                m.validation_response_body = "Missing AWS access-key ID or secret.".to_string();
+                m.validation_response_body = validation_body::from_string(
+                    "Missing AWS access-key ID or secret.".to_string(),
+                );
                 m.validation_response_status = StatusCode::BAD_REQUEST;
                 commit_and_return(m);
                 return;
@@ -731,40 +1005,73 @@ async fn timed_validate_single_match<'a>(
                 }
             }
 
+            if let Some(account_id) = aws::should_skip_aws_validation(&akid) {
+                m.validation_success = false;
+                m.validation_response_body = validation_body::from_string(format!(
+                    "(skip list entry) AWS validation not attempted for account {}.",
+                    account_id
+                ));
+                m.validation_response_status = StatusCode::CONTINUE;
+                cache.insert(
+                    cache_key,
+                    CachedResponse {
+                        body: m.validation_response_body.clone(),
+                        status: m.validation_response_status,
+                        is_valid: m.validation_success,
+                        timestamp: Instant::now(),
+                    },
+                );
+                commit_and_return(m);
+                return;
+            }
+
             if let Err(e) = aws::validate_aws_credentials_input(&akid, &secret) {
                 m.validation_success = false;
-                m.validation_response_body = format!("Invalid AWS credentials ({}): {}", akid, e);
+                m.validation_response_body = validation_body::from_string(format!(
+                    "Invalid AWS credentials ({}): {}",
+                    akid, e
+                ));
                 m.validation_response_status = StatusCode::BAD_REQUEST;
                 commit_and_return(m);
                 return;
             }
 
-            match aws::validate_aws_credentials(&akid, &secret, cache).await {
-                Ok((ok, arn)) => {
+            match aws::validate_aws_credentials(&akid, &secret).await {
+                Ok((ok, msg)) => {
                     m.validation_success = ok;
-                    m.validation_response_body = format!("{} --- ARN: {}", akid, arn);
-                    m.validation_response_status =
-                        if ok { StatusCode::OK } else { StatusCode::UNAUTHORIZED };
-                    if let Ok(acct) = aws::aws_key_to_account_number(&akid) {
-                        m.validation_response_body
-                            .push_str(&format!(" --- AWS Account Number: {:012}", acct));
+                    if ok {
+                        let mut body = format!("{} --- ARN: {}", akid, msg);
+                        if let Ok(acct) = aws::aws_key_to_account_number(&akid) {
+                            body.push_str(&format!(" --- AWS Account Number: {:012}", acct));
+                        }
+                        m.validation_response_body = validation_body::from_string(body);
+                        m.validation_response_status = StatusCode::OK;
+                    } else {
+                        m.validation_response_body = validation_body::from_string(format!(
+                            "AWS validation error ({}): {}",
+                            akid, msg
+                        ));
+                        m.validation_response_status = StatusCode::UNAUTHORIZED;
                     }
+                    cache.insert(
+                        cache_key,
+                        CachedResponse {
+                            body: m.validation_response_body.clone(),
+                            status: m.validation_response_status,
+                            is_valid: m.validation_success,
+                            timestamp: Instant::now(),
+                        },
+                    );
                 }
                 Err(e) => {
                     m.validation_success = false;
-                    m.validation_response_body = format!("AWS validation error ({}): {}", akid, e);
+                    m.validation_response_body = validation_body::from_string(format!(
+                        "AWS validation error ({}): {}",
+                        akid, e
+                    ));
                     m.validation_response_status = StatusCode::BAD_GATEWAY;
                 }
             }
-            cache.insert(
-                cache_key,
-                CachedResponse {
-                    body: m.validation_response_body.clone(),
-                    status: m.validation_response_status,
-                    is_valid: m.validation_success,
-                    timestamp: Instant::now(),
-                },
-            );
         }
 
         // ----------------------------------------------------- GCP validator
@@ -777,7 +1084,8 @@ async fn timed_validate_single_match<'a>(
 
             if gcp_json.is_empty() {
                 m.validation_success = false;
-                m.validation_response_body = "GCP JSON not found.".to_string();
+                m.validation_response_body =
+                    validation_body::from_string("GCP JSON not found.".to_string());
                 m.validation_response_status = StatusCode::BAD_REQUEST;
                 commit_and_return(m);
                 return;
@@ -800,20 +1108,27 @@ async fn timed_validate_single_match<'a>(
                     match validator.validate_gcp_credentials(&gcp_json.as_bytes()).await {
                         Ok((ok, meta)) => {
                             m.validation_success = ok;
-                            m.validation_response_body = meta.join("\n");
+                            m.validation_response_body =
+                                validation_body::from_string(meta.join("\n"));
                             m.validation_response_status =
                                 if ok { StatusCode::OK } else { StatusCode::UNAUTHORIZED };
                         }
                         Err(e) => {
                             m.validation_success = false;
-                            m.validation_response_body = format!("GCP validation error: {}", e);
+                            m.validation_response_body = validation_body::from_string(format!(
+                                "GCP validation error: {}",
+                                e
+                            ));
                             m.validation_response_status = StatusCode::BAD_GATEWAY;
                         }
                     }
                 }
                 Err(e) => {
                     m.validation_success = false;
-                    m.validation_response_body = format!("Failed to create GCP validator: {}", e);
+                    m.validation_response_body = validation_body::from_string(format!(
+                        "Failed to create GCP validator: {}",
+                        e
+                    ));
                     m.validation_response_status = StatusCode::INTERNAL_SERVER_ERROR;
                 }
             }
@@ -827,12 +1142,51 @@ async fn timed_validate_single_match<'a>(
                 },
             );
         }
+        // ----------------------------------------------------- Coinbase validator
+        Some(Validation::Coinbase) => {
+            let cred_name = globals
+                .get("CRED_NAME")
+                .and_then(|v| v.as_scalar())
+                .map(|s| s.into_owned().to_kstr().to_string())
+                .unwrap_or_default();
+            let private_key = globals
+                .get("PRIVATE_KEY")
+                .and_then(|v| v.as_scalar())
+                .map(|s| s.into_owned().to_kstr().to_string())
+                .unwrap_or_default();
 
+            if cred_name.is_empty() || private_key.is_empty() {
+                m.validation_success = false;
+                m.validation_response_body =
+                    validation_body::from_string("Missing key name or private key.".to_string());
+                m.validation_response_status = StatusCode::BAD_REQUEST;
+                commit_and_return(m);
+                return;
+            }
+
+            match coinbase::validate_cdp_api_key(&cred_name, &private_key, client, parser, cache)
+                .await
+            {
+                Ok((ok, msg)) => {
+                    m.validation_success = ok;
+                    m.validation_response_body = msg;
+                    m.validation_response_status =
+                        if ok { StatusCode::OK } else { StatusCode::UNAUTHORIZED };
+                }
+                Err(e) => {
+                    m.validation_success = false;
+                    m.validation_response_body =
+                        validation_body::from_string(format!("Coinbase validation error: {}", e));
+                    m.validation_response_status = StatusCode::BAD_GATEWAY;
+                }
+            }
+        }
         // --------------------------------------------------------- Raw / none
         Some(Validation::Raw(raw)) => {
             debug!("Raw validation not implemented: {}", raw);
             m.validation_success = false;
-            m.validation_response_body = "Validator not implemented".to_string();
+            m.validation_response_body =
+                validation_body::from_string("Validator not implemented".to_string());
             m.validation_response_status = StatusCode::NOT_IMPLEMENTED;
         }
         None => { /* no validation specified */ }
@@ -842,265 +1196,218 @@ async fn timed_validate_single_match<'a>(
     commit_and_return(m);
 }
 
-#[cfg(test)]
-mod tests {
-    use std::sync::Arc;
+fn populate_globals_from_captures(
+    globals: &mut Object,
+    captured_values: &[(String, String, usize, usize)],
+) {
+    let mut best_token: Option<&String> = None;
 
-    use anyhow::Result;
-    use crossbeam_skiplist::SkipMap;
-    use http::StatusCode;
-    use rustc_hash::FxHashMap;
-
-    use crate::{
-        blob::BlobId,
-        liquid_filters::register_all,
-        location::OffsetSpan,
-        matcher::{OwnedBlobMatch, SerializableCapture, SerializableCaptures},
-        rules::{
-            rule::{Confidence, Rule},
-            Rules,
-        },
-        validation::{validate_single_match, Cache},
-    };
-    #[tokio::test]
-    async fn test_actual_pypi_token_validation() -> Result<()> {
-        // Minimal PyPI YAML snippet for testing
-        let pypi_yaml = r#"
-rules:
-  - name: PyPI Upload Token
-    id: kingfisher.pypi.1
-    pattern: |
-      (?x)
-      \b
-      (
-        pypi-AgEIcHlwaS5vcmc[a-zA-Z0-9_-]{50,}
-      )
-      (?:[^a-zA-Z0-9_-]|$)
-    min_entropy: 4.0
-    confidence: medium
-    examples:
-      - '# password = pypi-AgEIcHlwaS5vcmcCJDkwNzYwNzU1LWMwOTUtNGNkOC1iYjQzLTU3OWNhZjI1NDQ1MwACJXsicGVybWCf99lvbnMiOiAidXNlciIsICJ2ZXJzaW9uIjogMX0AAAYgSpW5PAywXvchMUQnkF5H6-SolJysfUvIWopMsxE4hCM'
-      - 'password: pypi-AgEIcHlwaS5vcmcCJGExMDIxZjRhLTFhZDMtNDc4YS1iOWNmLWQwCf99OTIwZjFjNwACSHsicGVybWlzc2lvbnMiOiB7InByb2plY3RzIjogWyJkamFuZ28tY2hhbm5lbHMtanNvbnJwYyJdfSwgInZlcnNpb24iOiAxfQAABiBZg48cIBQt7HckwM4G3q-462xphsLbm7IZvjqMS4jvQw'
-    validation:
-      type: Http
-      content:
-        request:
-          method: POST
-          url: https://upload.pypi.org/legacy/
-          response_is_html: true
-          response_matcher:
-            - report_response: true
-            - type: WordMatch
-              words:
-                - "isn't allowed to upload to project"
-          headers:
-            Authorization: 'Basic {{ "__token__:" | append: TOKEN | b64enc }}'
-          multipart:
-            parts:
-              - name: name
-                type: text
-                content: "my-package"
-              - name: version
-                type: text
-                content: "0.0.1"
-              - name: filetype
-                type: text
-                content: "sdist"
-              - name: metadata_version
-                type: text
-                content: "2.1"
-              - name: summary
-                type: text
-                content: "A simple example package"
-              - name: home_page
-                type: text
-                content: "https://github.com/yourusername/my_package"
-              - name: sha256_digest
-                type: text
-                content: "0447379dd46c4ca8b8992bda56d07b358d015efb9300e6e16f224f4536e71d64"
-              - name: md5_digest
-                type: text
-                content: "9b4036ab91a71124ab9f1d32a518e2bb"
-              - name: :action
-                type: text
-                content: "file_upload"
-              - name: protocol_version
-                type: text
-                content: "1"
-              - name: content
-                type: file
-                content: "path/to/my_package-0.0.1.tar.gz"
-                content_type: "application/octet-stream"
-        "#;
-        // Use from_paths_and_contents to parse the YAML snippet into a Rules object
-        let data = vec![(std::path::Path::new("pypi_test.yaml"), pypi_yaml.as_bytes())];
-        let rules = Rules::from_paths_and_contents(data, Confidence::Low)?;
-        // Find the PyPI rule we just loaded
-        let pypi_rule_syntax = rules
-            .rules
-            .iter()
-            .find(|r| r.id == "kingfisher.pypi.1")
-            .expect("Failed to find PyPI rule in test YAML")
-            .clone(); // Clone so we can create a `Rule` from it
-                      // Wrap that into a `Rule` object
-        let pypi_rule = Rule::new(pypi_rule_syntax);
-        //////////////////////////////////////////
-        //
-        // Your actual PyPI token to test
-        let token = "<enter_pypi_token_here>";
-        let id = BlobId::new(&pypi_yaml.as_bytes());
-        // Construct an `OwnedBlobMatch` (all fields needed):
-        let mut owned_blob_match = OwnedBlobMatch {
-            rule: pypi_rule.into(),
-            blob_id: id,
-            finding_fingerprint: 0, // dummy value
-            // matching_input: token.as_bytes().to_vec(),
-            matching_input_offset_span: OffsetSpan { start: 0, end: token.len() },
-            captures: SerializableCaptures {
-                captures: vec![SerializableCapture {
-                    name: Some("TOKEN".to_string()),
-                    match_number: -1,
-                    start: 0,
-                    end: token.len(),
-                    value: token.into(),
-                }],
-            },
-            validation_response_body: String::new(),
-            validation_response_status: StatusCode::OK,
-            validation_success: false,
-            calculated_entropy: 0.0, // or compute your own
-        };
-        let parser = register_all(liquid::ParserBuilder::with_stdlib()).build()?;
-        let client = reqwest::Client::new();
-        let cache: Cache = Arc::new(SkipMap::new());
-        let dependent_vars = FxHashMap::default();
-        let missing_deps = FxHashMap::default();
-        // Run the validation
-        validate_single_match(
-            &mut owned_blob_match,
-            &parser,
-            &client,
-            &dependent_vars,
-            &missing_deps,
-            &cache,
-        )
-        .await;
-        println!("Success? {:?}", owned_blob_match.validation_success);
-        println!("Status: {:?}", owned_blob_match.validation_response_status);
-        println!("Body: {:?}", owned_blob_match.validation_response_body);
-        Ok(())
+    for (k, v, ..) in captured_values {
+        if k.eq_ignore_ascii_case("TOKEN") {
+            if best_token.map_or(true, |best| v.len() >= best.len()) {
+                best_token = Some(v);
+            }
+        } else {
+            globals.insert(k.to_uppercase().into(), Value::scalar(v.clone()));
+        }
     }
 
-    //     // ────────────────────────────────────────────────────────────────
-    //     // Slack Webhook – end-to-end validation test
-    //     // ────────────────────────────────────────────────────────────────
-    //     #[tokio::test]
-    //     async fn test_actual_slack_webhook_validation() -> anyhow::Result<()> {
-    //         use std::sync::Arc;
-
-    //         use crossbeam_skiplist::SkipMap;
-    //         use http::StatusCode;
-    //         use rustc_hash::FxHashMap;
-
-    //         use crate::{
-    //             blob::BlobId,
-    //             liquid_filters::register_all,
-    //             location::OffsetSpan,
-    //             matcher::{OwnedBlobMatch, SerializableCapture, SerializableCaptures},
-    //             rules::{
-    //                 rule::{Confidence, Rule},
-    //                 Rules,
-    //             },
-    //             validation::{validate_single_match, Cache},
-    //         };
-
-    //         // 1️⃣ YAML snippet with the **exact** Slack rule
-    //         let slack_yaml = r#"
-    // rules:
-    //   - name: Slack Webhook id: kingfisher.slack.4 pattern: | (?xi) \b ( https://hooks\.slack\.com/services/
-    //     T[a-z0-9_-]{8,12}/ B[a-z0-9_-]{8,12}/ [a-z0-9_-]{20,30} ) \b min_entropy: 3.3 confidence:
-    //     medium examples:
-    //       - https://hooks.slack.com/services/TY40v9sZ9/BxIqhIXIi/NGUyXK6nK7HMAqd0ASzXluoV
-    //       - https://hooks.slack.com/services/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
-    //     validation:
-    //       type: Http
-    //       content:
-    //         request:
-    //           headers:
-    //             Content-Type: application/json
-    //           method: POST
-    //           response_matcher:
-    //             - report_response: true
-    //             - type: WordMatch words:
-    //                 - invalid_payload
-    //             - type: WordMatch words:
-    //                 - "invalid_token"
-    //               negative: true
-    //           url: "{{ TOKEN }}"
-    // "#;
-
-    //         // 2️⃣ Load that YAML into a Rules object
-    //         let data = vec![(std::path::Path::new("slack_test.yaml"), slack_yaml.as_bytes())];
-    //         let rules = Rules::from_paths_and_contents(data, Confidence::Low)?;
-
-    //         // 3️⃣ Pull the rule syntax & wrap into a Rule
-    //         let slack_rule_syntax = rules
-    //             .rules
-    //             .iter()
-    //             .find(|r| r.id == "kingfisher.slack.4")
-    //             .expect("Slack rule not found")
-    //             .clone();
-    //         let slack_rule = Rule::new(slack_rule_syntax);
-
-    //         // 4️⃣ Provide a real-looking webhook URL (use one of the examples)
-    //         let token = "ENTER YOUR SLACK WEBHOOK URL HERE";
-
-    //         // 5️⃣ Build OwnedBlobMatch stub
-    //         let blob_id = BlobId::new(&token.as_bytes());
-    //         let mut owned_blob_match = OwnedBlobMatch {
-    //             rule: slack_rule.into(),
-    //             blob_id,
-    //             finding_fingerprint: 0,
-    //             matching_input_offset_span: OffsetSpan { start: 0, end: token.len() },
-    //             captures: SerializableCaptures {
-    //                 captures: vec![SerializableCapture {
-    //                     name: Some("TOKEN".to_string()),
-    //                     match_number: -1,
-    //                     start: 0,
-    //                     end: token.len(),
-    //                     value: token.into(),
-    //                 }],
-    //             },
-    //             validation_response_body: String::new(),
-    //             validation_response_status: StatusCode::OK,
-    //             validation_success: false,
-    //             calculated_entropy: 5.0,
-    //         };
-
-    //         // 6️⃣ Prepare helpers and run validation
-    //         let parser = register_all(liquid::ParserBuilder::with_stdlib()).build()?;
-    //         let client = reqwest::Client::new();
-    //         let cache: Cache = Arc::new(SkipMap::new());
-    //         let dependent_vars = FxHashMap::default();
-    //         let missing_deps = FxHashMap::default();
-
-    //         validate_single_match(
-    //             &mut owned_blob_match,
-    //             &parser,
-    //             &client,
-    //             &dependent_vars,
-    //             &missing_deps,
-    //             &cache,
-    //         )
-    //         .await;
-
-    //         // 7️⃣ Inspect outcome (true ⇒ credential considered ACTIVE)
-    //         assert!(
-    //             owned_blob_match.validation_success,
-    //             "Slack webhook should be reported ACTIVE; body was {:?}",
-    //             owned_blob_match.validation_response_body
-    //         );
-
-    //         Ok(())
-    //     }
+    if let Some(token) = best_token {
+        globals.insert("TOKEN".into(), Value::scalar(token.clone()));
+    }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn populate_globals_prefers_longest_token() {
+        let captured_values = vec![
+            ("TOKEN".to_string(), "short".to_string(), 0usize, 5usize),
+            ("BODY".to_string(), "body".to_string(), 0usize, 4usize),
+            ("TOKEN".to_string(), "longervalue".to_string(), 0usize, 11usize),
+        ];
+
+        let mut globals = Object::new();
+        populate_globals_from_captures(&mut globals, &captured_values);
+
+        assert_eq!(globals.get("TOKEN"), Some(Value::scalar("longervalue")).as_ref());
+        assert_eq!(globals.get("BODY"), Some(Value::scalar("body")).as_ref());
+    }
+
+    #[test]
+    fn populate_globals_handles_missing_token() {
+        let captured_values = vec![("CHECKSUM".to_string(), "123456".to_string(), 0usize, 6usize)];
+
+        let mut globals = Object::new();
+        populate_globals_from_captures(&mut globals, &captured_values);
+
+        assert!(globals.get("TOKEN").is_none());
+        assert_eq!(globals.get("CHECKSUM"), Some(Value::scalar("123456")).as_ref());
+    }
+
+    #[test]
+    fn truncate_to_char_boundary_handles_multibyte_characters() {
+        let mut body = "a".repeat(MAX_VALIDATION_BODY_LEN);
+        body.push('é');
+
+        truncate_to_char_boundary(&mut body, MAX_VALIDATION_BODY_LEN);
+
+        assert_eq!(body.len(), MAX_VALIDATION_BODY_LEN);
+        assert!(body.is_char_boundary(body.len()));
+        assert!(body.ends_with('a'));
+    }
+}
+
+// #[cfg(test)]
+// mod tests {
+//     use std::sync::Arc;
+
+//     use anyhow::Result;
+//     use crossbeam_skiplist::SkipMap;
+//     use http::StatusCode;
+//     use rustc_hash::FxHashMap;
+//     use smallvec::smallvec;
+
+//     use crate::{
+//         blob::BlobId,
+//         liquid_filters::register_all,
+//         location::OffsetSpan,
+//         matcher::{OwnedBlobMatch, SerializableCapture, SerializableCaptures},
+//         rules::{
+//             rule::{Confidence, Rule},
+//             Rules,
+//         },
+//         util::intern,
+//         validation::{validate_single_match, Cache},
+//     };
+//     #[tokio::test]
+//     async fn test_actual_pypi_token_validation() -> Result<()> {
+//         // Minimal PyPI YAML snippet for testing
+//         let pypi_yaml = r#"
+// rules:
+//   - name: PyPI Upload Token
+//     id: kingfisher.pypi.1
+//     pattern: |
+//       (?x)
+//       \b
+//       (
+//         pypi-AgEIcHlwaS5vcmc[a-zA-Z0-9_-]{50,}
+//       )
+//       (?:[^a-zA-Z0-9_-]|$)
+//     min_entropy: 4.0
+//     confidence: medium
+//     examples:
+//       - '# password = pypi-AgEIcHlwaS5vcmcCJDkwNzYwNzU1LWMwOTUtNGNkOC1iYjQzLTU3OWNhZjI1NDQ1MwACJXsicGVybWCf99lvbnMiOiAidXNlciIsICJ2ZXJzaW9uIjogMX0AAAYgSpW5PAywXvchMUQnkF5H6-SolJysfUvIWopMsxE4hCM'
+//       - 'password: pypi-AgEIcHlwaS5vcmcCJGExMDIxZjRhLTFhZDMtNDc4YS1iOWNmLWQwCf99OTIwZjFjNwACSHsicGVybWlzc2lvbnMiOiB7InByb2plY3RzIjogWyJkamFuZ28tY2hhbm5lbHMtanNvbnJwYyJdfSwgInZlcnNpb24iOiAxfQAABiBZg48cIBQt7HckwM4G3q-462xphsLbm7IZvjqMS4jvQw'
+//     validation:
+//       type: Http
+//       content:
+//         request:
+//           method: POST
+//           url: https://upload.pypi.org/legacy/
+//           response_is_html: true
+//           response_matcher:
+//             - report_response: true
+//             - type: WordMatch
+//               words:
+//                 - "isn't allowed to upload to project"
+//           headers:
+//             Authorization: 'Basic {{ "__token__:" | append: TOKEN | b64enc }}'
+//           multipart:
+//             parts:
+//               - name: name
+//                 type: text
+//                 content: "my-package"
+//               - name: version
+//                 type: text
+//                 content: "0.0.1"
+//               - name: filetype
+//                 type: text
+//                 content: "sdist"
+//               - name: metadata_version
+//                 type: text
+//                 content: "2.1"
+//               - name: summary
+//                 type: text
+//                 content: "A simple example package"
+//               - name: home_page
+//                 type: text
+//                 content: "https://github.com/yourusername/my_package"
+//               - name: sha256_digest
+//                 type: text
+//                 content: "0447379dd46c4ca8b8992bda56d07b358d015efb9300e6e16f224f4536e71d64"
+//               - name: md5_digest
+//                 type: text
+//                 content: "9b4036ab91a71124ab9f1d32a518e2bb"
+//               - name: :action
+//                 type: text
+//                 content: "file_upload"
+//               - name: protocol_version
+//                 type: text
+//                 content: "1"
+//               - name: content
+//                 type: file
+//                 content: "path/to/my_package-0.0.1.tar.gz"
+//                 content_type: "application/octet-stream"
+//         "#;
+//         // Use from_paths_and_contents to parse the YAML snippet into a Rules object
+//         let data = vec![(std::path::Path::new("pypi_test.yaml"), pypi_yaml.as_bytes())];
+//         let rules = Rules::from_paths_and_contents(data, Confidence::Low)?;
+//         // Find the PyPI rule we just loaded
+//         let pypi_rule_syntax = rules
+//             .iter_rules()
+//             .find(|r| r.id == "kingfisher.pypi.1")
+//             .expect("Failed to find PyPI rule in test YAML")
+//             .clone(); // Clone so we can create a `Rule` from it
+//                       // Wrap that into a `Rule` object
+//         let pypi_rule = Rule::new(pypi_rule_syntax);
+//         //////////////////////////////////////////
+//         //
+//         // Your actual PyPI token to test
+//         let token = "<enter_pypi_token_here>";
+//         let id = BlobId::new(&pypi_yaml.as_bytes());
+//         // Construct an `OwnedBlobMatch` (all fields needed):
+//         let mut owned_blob_match = OwnedBlobMatch {
+//             rule: pypi_rule.into(),
+//             blob_id: id,
+//             finding_fingerprint: 0, // dummy value
+//             // matching_input: token.as_bytes().to_vec(),
+//             matching_input_offset_span: OffsetSpan { start: 0, end: token.len() },
+//             captures: SerializableCaptures {
+//                 captures: smallvec![SerializableCapture {
+//                     name: Some("TOKEN".to_string()),
+//                     match_number: -1,
+//                     start: 0,
+//                     end: token.len(),
+//                     value: intern(token),
+//                 }],
+//             },
+//             validation_response_body: String::new(),
+//             validation_response_status: StatusCode::OK,
+//             validation_success: false,
+//             calculated_entropy: 0.0, // or compute your own
+//             is_base64: false,
+//         };
+//         let parser = register_all(liquid::ParserBuilder::with_stdlib()).build()?;
+//         let client = reqwest::Client::new();
+//         let cache: Cache = Arc::new(SkipMap::new());
+//         let dependent_vars = FxHashMap::default();
+//         let missing_deps = FxHashMap::default();
+//         // Run the validation
+//         validate_single_match(
+//             &mut owned_blob_match,
+//             &parser,
+//             &client,
+//             &dependent_vars,
+//             &missing_deps,
+//             &cache,
+//         )
+//         .await;
+//         println!("Success? {:?}", owned_blob_match.validation_success);
+//         println!("Status: {:?}", owned_blob_match.validation_response_status);
+//         println!("Body: {:?}", owned_blob_match.validation_response_body);
+//         Ok(())
+//     }
+// }

@@ -7,7 +7,7 @@ use sysinfo::{MemoryRefreshKind, RefreshKind, System};
 use tracing::Level;
 
 use crate::cli::commands::{
-    github::GitHubArgs, gitlab::GitLabArgs, rules::RulesArgs, scan::ScanArgs,
+    access_map::AccessMapArgs, rules::RulesArgs, scan::ScanCommandArgs, view::ViewArgs,
 };
 
 #[deny(missing_docs)]
@@ -41,6 +41,15 @@ impl CommandLineArgs {
             args.global_args.progress = Mode::Never;
         }
 
+        if let Some(suffix) = args.global_args.user_agent_suffix.as_mut() {
+            let trimmed = suffix.trim();
+            if trimmed.is_empty() {
+                args.global_args.user_agent_suffix = None;
+            } else if trimmed.len() != suffix.len() {
+                *suffix = trimmed.to_string();
+            }
+        }
+
         args
     }
 }
@@ -49,19 +58,22 @@ impl CommandLineArgs {
 #[derive(Subcommand, Debug)]
 pub enum Command {
     /// Scan content for secrets and sensitive information
-    Scan(ScanArgs),
-
-    /// Interact with the GitHub API
-    #[command(name = "github")]
-    GitHub(GitHubArgs),
-
-    /// Interact with the GitLab API
-    #[command(name = "gitlab")]
-    GitLab(GitLabArgs),
+    Scan(ScanCommandArgs),
 
     /// Manage rules
     #[command(alias = "rule")]
     Rules(RulesArgs),
+
+    /// Map a cloud credential to its identity, permissions, and blast radius
+    #[command(name = "access-map", alias = "access_map")]
+    AccessMap(AccessMapArgs),
+
+    /// View Kingfisher JSON/JSONL reports in a local web UI
+    View(ViewArgs),
+
+    /// Update the Kingfisher binary
+    #[command(name = "update", alias = "self-update")]
+    SelfUpdate,
 }
 
 pub static RAM_GB: Lazy<Option<f64>> = Lazy::new(|| {
@@ -74,15 +86,6 @@ pub static RAM_GB: Lazy<Option<f64>> = Lazy::new(|| {
         None
     }
 });
-
-/// Advanced global options unlikely to be used in normal scenarios.
-#[derive(Args, Debug, Clone)]
-#[command(next_help_heading = "Advanced Global Options")]
-pub struct AdvancedArgs {
-    /// Set the rlimit for the number of open files
-    #[arg(long, default_value_t = 16384, value_name = "LIMIT")]
-    pub rlimit_nofile: u64,
-}
 
 /// Top-level global CLI arguments
 #[derive(Args, Debug, Clone)]
@@ -101,15 +104,16 @@ pub struct GlobalArgs {
     pub ignore_certs: bool,
 
     /// Update the Kingfisher binary to the latest release
-    #[arg(global = true, long = "self-update", default_value_t = false)]
+    #[arg(global = true, long = "self-update", alias = "update", default_value_t = false)]
     pub self_update: bool,
 
     /// Disable automatic update checks
     #[arg(global = true, long = "no-update-check", default_value_t = false)]
     pub no_update_check: bool,
 
-    #[command(flatten)]
-    pub advanced: AdvancedArgs,
+    /// Append a custom suffix to the default Kingfisher user-agent string
+    #[arg(global = true, long = "user-agent-suffix", value_name = "SUFFIX")]
+    pub user_agent_suffix: Option<String>,
 
     // Internal fields (not CLI arguments)
     #[clap(skip)]
@@ -127,7 +131,7 @@ impl Default for GlobalArgs {
             ignore_certs: false,
             self_update: false,
             no_update_check: false,
-            advanced: AdvancedArgs { rlimit_nofile: 16384 },
+            user_agent_suffix: None,
             color: Mode::Auto,
             progress: Mode::Auto,
         }

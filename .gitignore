@@ -5,11 +5,19 @@
 *.sarif
 *.profile.json
 *.json
+!webserver/static/sample-report.json
+!docs/access-map-viewer/sample-report.json
 *.jsonl
 *.bson
 .prettierrc
 custom.py
 logs/*
+*.patch
+*.orig
+*.rej
+*.html
+!docs/access-map-viewer/index.html
+*.dot
 
 ### macOS ###
 # General
@@ -20,6 +28,7 @@ logs/*
 # Icon must end with two \r
 Icon
 
+node_modules/
 
 # Thumbnails
 ._*
@@ -68,6 +77,7 @@ Cargo.lock
 !.vscode/launch.json
 !.vscode/extensions.json
 !.vscode/*.code-snippets
+.vscode/launch.json
 
 # Local History for Visual Studio Code
 .history/

@@ -22,9 +22,10 @@ rules:
       PRIVATE\sKEY
       (\sBLOCK)?
       -----
+    pattern_requirements:
+      min_digits: 2
     min_entropy: 4.5
     confidence: high
-    prevalidated: true
     examples:
       - |-
         -----BEGIN RSA PRIVATE KEY-----
@@ -45,8 +46,7 @@ rules:
   - name: Contains Private Key
     id: kingfisher.privkey.2
     pattern: |
-      (?xi)                    
-      (?ims)
+      (?xims)
       (                       
         -----BEGIN\s
         (?:
@@ -68,16 +68,20 @@ rules:
           PGP |
           DSA |
           OPENSSH |
-          ENCRYPTED
+          ENCRYPTED |
+          EC
         )?
         \s{0,1}
         PRIVATE\sKEY
         (\sBLOCK)?
         -----
-      )                       
+      )
+    pattern_requirements:
+      min_digits: 2
+      min_uppercase: 1
+      min_lowercase: 1
     min_entropy: 4.5
     confidence: high
-    prevalidated: true
     examples:
       - |
         -----BEGIN PRIVATE KEY-----

@@ -3,15 +3,16 @@ rules:
     id: kingfisher.jwt.1
     pattern: |
       (?x)
-      \b
       (
-        ey[A-Za-z0-9_-]{12,}  (?# header )
+        (?:ey|ewogIC)[A-Za-z0-9_-]{12,}  (?# header )
         \.
         ey[A-Za-z0-9_-]{12,}  (?# payload )
         \.
         [A-Za-z0-9_-]{12,}    (?# signature )
       )
-      (?:[^A-Z0-9_-]|$)   (?# this instead of a \b anchor because that doesn't play nicely with `-` )
+      (?:[^A-Z0-9_-])
+    pattern_requirements:
+      min_digits: 4
     min_entropy: 3.3
     confidence: medium
     examples:
@@ -23,3 +24,5 @@ rules:
       - https://en.wikipedia.org/wiki/Base64#URL_applications
       - https://datatracker.ietf.org/doc/html/rfc4648
       - https://developer.okta.com/blog/2018/06/20/what-happens-if-your-jwt-is-stolen
+    validation:
+      type: JWT

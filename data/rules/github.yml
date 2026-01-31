@@ -1,23 +1,53 @@
 rules:
-  - name: GitHub Personal Access Token
+  - name: GitHub Personal Access Token - fine-grained permissions
     id: kingfisher.github.1
     pattern: |
-      (?xi)                     
-      \b                       
-      (                        
-        (?:                     # for token prefixes
-          ghp|                 # Personal Access Token
-          gho|                 # OAuth Token
-          ghu|                 # GitHub App User-to-Server Token
-          ghs|                 # GitHub App Server-to-Server Token
-          ghr|                 # Refresh Token
-          github_pat           # Alternative format for Personal Access Token
-        )_                     
-        (?:                     # for token body
-          [a-z0-9_]{35,235}    # 35 to 235 lowercase alphanumeric characters or underscores
-        )
-      )                        
+      (?xi)                 
+      (
+        github_pat_
+        [A-Z0-9_+]{82,84}
+      )
       \b
+    pattern_requirements:
+      min_digits: 2
+      min_lowercase: 2
+    min_entropy: 3.5
+    examples:
+      - "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"
+    references:
+      - https://docs.github.com/en/rest/users?apiVersion=2022-11-28
+    validation:
+      type: Http
+      content:
+        request:
+          method: GET
+          url: https://api.github.com/user
+          headers:
+            Authorization: token {{ TOKEN }}
+            Accept: application/vnd.github+json
+          response_matcher:
+            - report_response: true
+            - match_all_words: true
+              type: WordMatch
+              words:
+                - '"login"'
+                - '"id"'
+  - name: GitHub Personal Access Token
+    id: kingfisher.github.2
+    pattern: |
+      (?xi)
+      (
+        ghp_(?P<body>[A-Z0-9]{30})(?P<checksum>[A-Z0-9]{6})
+      )
+    pattern_requirements:
+      min_digits: 2
+      min_lowercase: 2
+      checksum:
+        actual:
+          template: "{{ MATCH | suffix: 6 }}"
+          requires_capture: checksum
+        expected: "{{ BODY | crc32 | base62: 6 }}"
+        skip_if_missing: true
     min_entropy: 3.5
     examples:
       - "GITHUB_KEY=ghp_XIxB7KMNdAr3zqWtQqhE94qglHqOzn1D1stg"
@@ -25,40 +55,39 @@ rules:
       - |
         ## git developer settings
         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
-      - "oauth_token: gho_fq75OMU7UVbS9pTZmoCCzJT6TM5d1w099FgG"
-      - "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"
     references:
       - https://docs.github.com/en/rest/users?apiVersion=2022-11-28
     validation:
       type: Http
       content:
         request:
-          method: POST
-          url: https://api.github.com/graphql
+          method: GET
+          url: https://api.github.com/user
           headers:
             Authorization: token {{ TOKEN }}
             Accept: application/vnd.github+json
-            Content-Type: application/json
-          body: |
-            {
-              "query": "{ viewer { login } }"
-            }
           response_matcher:
             - report_response: true
             - match_all_words: true
               type: WordMatch
               words:
                 - '"login"'
+                - '"id"'
   - name: GitHub OAuth Access Token
-    id: kingfisher.github.2
+    id: kingfisher.github.3
     pattern: |
-      (?xi)                     
-      \b                       
-      (                        
-        gho_
-        [A-Z0-9]{36}
-      )                        
-      \b                       
+      (?xi)
+      (
+        gho_(?P<body>[A-Z0-9]{30})(?P<checksum>[A-Z0-9]{6})
+      )
+    pattern_requirements:
+      min_digits: 2
+      checksum:
+        actual:
+          template: "{{ MATCH | suffix: 6 }}"
+          requires_capture: checksum
+        expected: "{{ BODY | crc32 | base62: 6 }}"
+        skip_if_missing: true
     min_entropy: 3.5
     confidence: medium
     examples:
@@ -70,33 +99,57 @@ rules:
       type: Http
       content:
         request:
-          method: POST
-          url: https://api.github.com/graphql
+          method: GET
+          url: https://api.github.com/user
           headers:
             Authorization: token {{ TOKEN }}
             Accept: application/vnd.github+json
-            Content-Type: application/json
-          body: |
-            {
-              "query": "{ viewer { login } }"
-            }
           response_matcher:
             - report_response: true
             - match_all_words: true
               type: WordMatch
               words:
                 - '"login"'
-  - name: GitHub App Token
-    id: kingfisher.github.3
+                - '"id"'
+  - name: GitHub App User-to-Server Token
+    id: kingfisher.github.4
     pattern: |
       (?xi)
-      \b
       (
-        (?:ghu|ghs)_[A-Z0-9]{36}
+        ghu_(?P<body>[A-Z0-9]{30})(?P<checksum>[A-Z0-9]{6})
       )
-      \b
     examples:
       - '            "token": "ghu_16C7e42F292c69C2E7C10c838347Ae178B4a",'
+      - |
+        Example usage:
+        git clone http://ghu_RguXIkihJjwHAP6eXEYxaPNvywurTr5IOAbg@github.com/username/repo.git
+    references:
+      - https://docs.github.com/en/rest/users?apiVersion=2022-11-28
+    validation:
+      type: Http
+      content:
+        request:
+          method: GET
+          url: https://api.github.com/user
+          headers:
+            Authorization: token {{ TOKEN }}
+            Accept: application/vnd.github+json
+          response_matcher:
+            - report_response: true
+            - match_all_words: true
+              type: WordMatch
+              words:
+                - '"login"'
+                - '"id"'
+  - name: GitHub App Server-to-Server Token
+    id: kingfisher.github.5
+    pattern: |
+      (?xi)
+      (
+        ghs_(?P<body>[A-Z0-9]{30})(?P<checksum>[A-Z0-9]{6})
+      )
+    examples:
+      - '            "token": "ghs_16C7e42F292c69C2E7C10c838347Ae178B4a",'
       - |
         Example usage:
         git clone http://ghs_RguXIkihJjwHAP6eXEYxaPNvywurTr5IOAbg@github.com/username/repo.git
@@ -106,31 +159,25 @@ rules:
       type: Http
       content:
         request:
-          method: POST
-          url: https://api.github.com/graphql
+          method: GET
+          url: https://api.github.com/user
           headers:
             Authorization: token {{ TOKEN }}
             Accept: application/vnd.github+json
-            Content-Type: application/json
-          body: |
-            {
-              "query": "{ viewer { login } }"
-            }
           response_matcher:
             - report_response: true
             - match_all_words: true
               type: WordMatch
               words:
                 - '"login"'
+                - '"id"'
   - name: GitHub Refresh Token
-    id: kingfisher.github.4
+    id: kingfisher.github.6
     pattern: |
       (?xi)
-      \b
       (
-        ghr_[A-Z0-9]{76}
+        ghr_(?P<body>[A-Z0-9]{30})(?P<checksum>[A-Z0-9]{6})
       )
-      \b
     examples:
       - '    "refresh_token": "ghr_1B4a2e77838347a7E420ce178F2E7c6912E169246c3CE1ccbF66C46812d16D5B1A9Dc86A1498",'
     references:
@@ -139,24 +186,21 @@ rules:
       type: Http
       content:
         request:
-          method: POST
-          url: https://api.github.com/graphql
+          method: GET
+          url: https://api.github.com/user
           headers:
             Authorization: token {{ TOKEN }}
             Accept: application/vnd.github+json
-            Content-Type: application/json
-          body: |
-            {
-              "query": "{ viewer { login } }"
-            }
           response_matcher:
             - report_response: true
             - match_all_words: true
               type: WordMatch
               words:
                 - '"login"'
+                - '"id"'
+
   - name: GitHub Client ID
-    id: kingfisher.github.5
+    id: kingfisher.github.7
     pattern: |
       (?xi)
       (?:github)
@@ -166,53 +210,46 @@ rules:
       (?: id | identifier | key )
       .{0,2} \s{0,20} .{0,2} \s{0,20} .{0,2}
       \b ([a-z0-9]{20}) \b
+    visible: false
     examples:
       - |
         GITHUB_CLIENT_ID=ac58d6da7d7a84c039b7
         GITHUB_SECRET=37d02377a3e9d849e18704c3ec883f9c5787d857
-  - name: GitHub Secret Key
-    id: kingfisher.github.6
+  - name: GitHub Legacy Secret Key
+    id: kingfisher.github.8
     pattern: |
       (?xi)
-      github
-      .?
-      (?: api | app | application | client | consumer | customer | secret | key )
-      .?
-      (?: key | oauth | sec | secret )?
-      .{0,2} \s{0,20} .{0,2} \s{0,20} .{0,2}
-      \b ([a-z0-9]{40}) \b
-    examples:
-      - |
-        GITHUB_CLIENT_ID=ac58d6da7d7a84c039b7
-        GITHUB_SECRET=37d02377a3e9d849e18704c3ec883f9c5787d857
-  - name: GitHub Personal Access Token (fine-grained permissions)
-    id: kingfisher.github.7
-    pattern: |
-      (?xi)
+      \b
+      (?:github|gh)
+      (?:.|[\n\r]){0,4}?
+      (?:oauth|pat|token|key|secret|api[_-]?key|access[_-]?token)\b
+      (?:.|[\n\r]){0,32}?
       \b
       (
-        github_pat_[0-9A-Z_]{82}
+          [a-z0-9]{40}
       )
       \b
-    examples:
-      - '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'
+    depends_on_rule:
+      - rule_id: "kingfisher.github.5"
+        variable: GITHUB_CLIENT_ID
     validation:
       type: Http
       content:
         request:
           method: POST
-          url: https://api.github.com/graphql
+          url: "https://github.com/login/oauth/access_token"
           headers:
-            Authorization: token {{ TOKEN }}
-            Accept: application/vnd.github+json
-            Content-Type: application/json
-          body: |
-            {
-              "query": "{ viewer { login } }"
-            }
+            Accept: "application/json"
+            Content-Type: "application/json"
+          body: '{"client_id":"{{GITHUB_CLIENT_ID}}","client_secret":"{{TOKEN}}","code":"invalid_code"}'
           response_matcher:
             - report_response: true
-            - match_all_words: true
-              type: WordMatch
+            - type: StatusMatch
+              status: [200]
+            - type: WordMatch
               words:
-                - '"login"'
+                - '"error":"bad_verification_code"'
+    examples:
+      - |
+        GITHUB_CLIENT_ID=ac58d6da7d7a84c039b7
+        GITHUB_SECRET=37d02377a3e9d849e18704c3ec883f9c5787d857

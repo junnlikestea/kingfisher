@@ -4,7 +4,7 @@ use tracing::{debug_span, trace};
 
 use crate::{
     blob::{Blob, BlobMetadata},
-    guesser::{Guesser, Input},
+    content_type::ContentInspector,
     location::LocationMapping,
     matcher::{Match, Matcher, OwnedBlobMatch, ScanResult},
     origin::{Origin, OriginSet},
@@ -12,11 +12,12 @@ use crate::{
     Path,
 };
 
-/// A combined matcher, content type guesser, and a number of parameters that
-/// don't change within one `scan` run
+const LOCATION_LIMIT_BYTES: usize = 256 * 1024 * 1024;
+
+/// A matcher along with parameters that remain constant during a single
+/// `scan` run
 pub struct BlobProcessor<'a> {
     pub matcher: Matcher<'a>,
-    pub guesser: Guesser,
 }
 
 impl<'a> BlobProcessor<'a> {
@@ -25,11 +26,17 @@ impl<'a> BlobProcessor<'a> {
         origin: OriginSet,
         blob: Blob,
         no_dedup: bool,
+        redact: bool,
+        no_base64: bool,
     ) -> Result<Option<DatastoreMessage>> {
-        let blob_id = blob.id.hex();
-        let _span = debug_span!("matcher", blob_id).entered();
+        let _span = debug_span!("matcher", temp_id = blob.temp_id()).entered();
         let t1 = Instant::now();
-        let res = self.matcher.scan_blob(&blob, &origin, None, false, no_dedup)?;
+        let language_hint = origin
+            .iter()
+            .find_map(|p| p.blob_path())
+            .and_then(|path| ContentInspector::default().guess_language(path, blob.bytes()));
+        let res =
+            self.matcher.scan_blob(&blob, &origin, language_hint, redact, no_dedup, no_base64)?;
         let scan_us = t1.elapsed().as_micros();
         match res {
             // blob already seen, but with no matches; nothing to do!
@@ -42,10 +49,9 @@ impl<'a> BlobProcessor<'a> {
             ScanResult::SeenWithMatches => {
                 trace!("({scan_us}us) blob already scanned with matches");
                 let metadata = BlobMetadata {
-                    id: blob.id,
+                    id: blob.id(),
                     num_bytes: blob.len(),
                     mime_essence: None,
-                    charset: None,
                     language: None,
                 };
                 Ok(Some((origin, metadata, Vec::new())))
@@ -60,12 +66,11 @@ impl<'a> BlobProcessor<'a> {
                 if matches.is_empty() {
                     return Ok(None);
                 }
-                let md = MetadataResult::from_blob_and_origin(&self.guesser, &blob, &origin);
+                let md = MetadataResult::from_blob_and_origin(&blob, &origin);
                 let metadata = BlobMetadata {
-                    id: blob.id,
+                    id: blob.id(),
                     num_bytes: blob.len(),
                     mime_essence: md.mime_essence,
-                    charset: md.charset,
                     language: md.language,
                 };
 
@@ -83,12 +88,17 @@ impl<'a> BlobProcessor<'a> {
                     }
                 }
 
-                let loc_mapping = LocationMapping::new(&blob.bytes());
+                let bytes = blob.bytes();
+                let loc_mapping = if bytes.len() <= LOCATION_LIMIT_BYTES {
+                    Some(LocationMapping::new(bytes))
+                } else {
+                    None
+                };
                 let converted_matches: Vec<(Option<f64>, Match)> = matches
                     .into_iter()
                     .map(|m| {
                         let converted_match = Match::convert_owned_blobmatch_to_match(
-                            &loc_mapping,
+                            loc_mapping.as_ref(),
                             &OwnedBlobMatch::from_blob_match(m),
                             origin_type,
                         );
@@ -105,22 +115,14 @@ impl<'a> BlobProcessor<'a> {
 struct MetadataResult {
     mime_essence: Option<String>,
     language: Option<String>,
-    charset: Option<String>,
 }
 impl MetadataResult {
-    fn from_blob_and_origin(guesser: &Guesser, blob: &Blob, origin: &OriginSet) -> MetadataResult {
+    fn from_blob_and_origin(blob: &Blob, origin: &OriginSet) -> MetadataResult {
         let blob_path: Option<&'_ Path> = origin.iter().find_map(|p| p.blob_path());
-        let input = match blob_path {
-            None => Input::from_bytes(&blob.bytes()), // Use Input directly
-            Some(blob_path) => {
-                Input::from_path_and_bytes(blob_path, &blob.bytes()) // Use Input
-                                                                     // directly
-            }
-        };
-        let guess = guesser.guess(input);
-        let mime_essence = guess.path_guess().map(|s| s.to_string());
-        let language = guess.content_guess().map(ToOwned::to_owned);
-        let charset = guess.path_guess().and_then(|_| guess.get_param("charset")); // Call get_param on Guess directly
-        MetadataResult { mime_essence, language, charset }
+        let bytes = blob.bytes();
+        let mime_essence = Some(tree_magic_mini::from_u8(bytes).to_string());
+        let inspector = ContentInspector::default();
+        let language = blob_path.and_then(|p| inspector.guess_language(p, bytes));
+        MetadataResult { mime_essence, language }
     }
 }

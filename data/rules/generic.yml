@@ -5,9 +5,12 @@ rules:
       (?xi)
       secret
       .{0,20}
+      (
+        [0-9a-z]{32,64}
+      )
       \b
-      ([0-9a-z]{32,64})
-      \b
+    pattern_requirements:
+      min_digits: 2
     min_entropy: 3.3
     confidence: low
     examples:
@@ -18,9 +21,12 @@ rules:
       (?xi)
       (?: api_key | apikey | access_key | accesskey )
       (?:.|[\n\r]){0,8}?
+      (
+        [0-9a-z][0-9a-z\-._/+]{30,62}[0-9a-z]
+      )
       \b
-      ([0-9a-z][0-9a-z\-._/+]{30,62}[0-9a-z])
-      \b
+    pattern_requirements:
+      min_digits: 2
     min_entropy: 3.3
     confidence: low
     examples:
@@ -31,7 +37,6 @@ rules:
     pattern: |
       (?xi)
       (?: username | user)
-      \b
       (?:.|[\n\r]){0,16}?
       (?: password | pass )
       (?:.|[\n\r]){0,16}?
@@ -66,7 +71,6 @@ rules:
     pattern: |
       (?xi)
       (?: username | user)
-      \b
       (?:.|[\n\r]){0,16}?
       (?: password | pass )
       (?:.|[\n\r]){0,16}?
@@ -89,14 +93,12 @@ rules:
     pattern: |
       (?xi)
       password
-      \b
       (?:.|[\n\r]){0,16}?
       ["']
       ([^$<%@.,\s'"(){}&/\#\-][^\s'"(){}/]{4,})  (?# password )
       ["']
     min_entropy: 3.3
     confidence: low
-    categories: [fuzzy, generic, secret]
     examples:
       - |
         password = "super$ecret"
@@ -128,10 +130,9 @@ rules:
                     'policy_path': os.path.join(TEST_DIR, 'policy.json')
                 })
   - name: Weak Password Pattern
-    id: kingfisher.weak_password.1
+    id: kingfisher.generic.6
     pattern: |
       (?xi)
-      \b
       (
         blink\d{3,6}
         |correcthorsebatterystaple\d{0,6}
@@ -145,7 +146,6 @@ rules:
         |qwerty\d{3,6}
         |trustno\d{1,6}
       )
-      \b
     min_entropy: 1.0
     confidence: low
     examples:
@@ -159,7 +159,6 @@ rules:
     pattern: |
       (?xi)
       (?: db_user | db_USERNAME | db_name)
-      \b
       (?:.|[\n\r]){0,8}?
       ["'] ([^"']{5,40}) ["']
       (?:.|[\n\r]){0,32}?
@@ -194,3 +193,20 @@ rules:
       - |
         user = 'Aladdin'
         password = 'open sesame'
+  - name: Docker Robot Credentials (plaintext pair)
+    id: kingfisher.generic.9
+    pattern: |
+      (?xi)
+      (                                  
+        (?P<USER> [a-z0-9._-]+ \+ [a-z0-9._-]+ )  
+        :
+        (?P<PASS> [A-Z0-9]{32,80} )
+      )
+      \b
+    min_entropy: 2.0
+    confidence: low
+    examples:
+      - some+thing:02PDFMQN2PL2ZAB9OX3IOHC1XMIW1SE5NWG3RETG58JUZJ310WFYESRA7F0LM461
+      - org+builder:1C2F9D0BB1E67E9F6B3B5B9A2A3D4E5F6A7B8C9D0E1F2A3B4C5D6E7F8A9B0C1
+    references:
+      - https://docs.quay.io/use_quay.html#robot-accounts

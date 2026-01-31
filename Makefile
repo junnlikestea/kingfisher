@@ -1,8 +1,7 @@
 SHELL := /usr/bin/env bash
 .SHELLFLAGS := -eu -o pipefail -c
 
-# Detect project name from Cargo.toml
-PROJECT_NAME := $(shell grep '^name' Cargo.toml | cut -d '"' -f 2)
+PROJECT_NAME := kingfisher
 
 # Determine OS and whether to use gtar on darwin
 OS := $(shell uname)
@@ -25,6 +24,7 @@ endif
 ifeq ($(OS),darwin)
   export HOMEBREW_NO_INSTALL_CLEANUP=1
   export HOMEBREW_NO_ENV_HINTS=1
+  export HOMEBREW_NO_AUTO_UPDATE=1
 endif
 
   # detect host architecture and map to our target suffixes
@@ -110,11 +110,11 @@ setup-zig:
 ubuntu-x64: setup-zig   # ensures Zig & cargo-zigbuild exist
 	@echo "Checking Rust toolchain…"
 	@$(MAKE) check-rust || { \
-	    echo "🦀  Installing Rust 1.85.0 …"; \
+            echo "🦀  Installing Rust 1.90.0 …"; \
 	    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; \
 	    . $$HOME/.cargo/env; \
-	    rustup toolchain install 1.85.0; \
-	    rustup default 1.85.0; \
+            rustup toolchain install 1.90.0; \
+            rustup default 1.90.0; \
 	}
 
 	@echo "📦  Installing build dependencies (musl, cmake, etc.)…"
@@ -150,11 +150,11 @@ ubuntu-x64: setup-zig   # ensures Zig & cargo-zigbuild exist
 ubuntu-arm64: setup-zig   # ensures Zig & cargo-zigbuild exist
 	@echo "Checking Rust toolchain…"
 	@$(MAKE) check-rust || { \
-	    echo "🦀  Installing Rust 1.85.0 …"; \
+            echo "🦀  Installing Rust 1.90.0 …"; \
 	    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; \
 	    . $$HOME/.cargo/env; \
-	    rustup toolchain install 1.85.0; \
-	    rustup default 1.85.0; \
+            rustup toolchain install 1.90.0; \
+            rustup default 1.90.0; \
 	}
 
 	@echo "📦  Installing build dependencies (musl, cmake, etc.)…"
@@ -183,14 +183,15 @@ ubuntu-arm64: setup-zig   # ensures Zig & cargo-zigbuild exist
 
 	$(MAKE) list-archives
 
-
 darwin-arm64:
 	@echo "Checking Rust for darwin-arm64..."
 	@$(MAKE) check-rust || ( \
 		echo "Rust not found or out-of-date. Installing via Homebrew..." && \
 		brew install rust \
 	)
-	@brew install boost cmake gcc libpcap pkg-config ragel sqlite coreutils gnu-tar || true
+	@brew list cmake >/dev/null 2>&1 || brew install cmake
+	@brew list boost >/dev/null 2>&1 || brew install boost
+	@brew install gcc libpcap pkg-config ragel sqlite coreutils gnu-tar
 	@rustup target add aarch64-apple-darwin
 	cargo build --release --target aarch64-apple-darwin --features system-alloc
 	@cd target/aarch64-apple-darwin/release && \
@@ -206,13 +207,18 @@ darwin-arm64:
 		fi
 	$(MAKE) list-archives
 
+darwin-dev:
+	cargo build --profile=dev --target aarch64-apple-darwin --features system-alloc
+
 darwin-x64:
 	@echo "Checking Rust for darwin-x64..."
 	@$(MAKE) check-rust || ( \
 		echo "Rust not found or out-of-date. Installing via Homebrew..." && \
 		brew install rust \
 	)
-	@brew install boost cmake gcc libpcap pkg-config ragel sqlite coreutils gnu-tar || true
+	@brew list cmake >/dev/null 2>&1 || brew install cmake
+	@brew list boost >/dev/null 2>&1 || brew install boost
+	@brew install gcc libpcap pkg-config ragel sqlite coreutils gnu-tar
 	@rustup target add x86_64-apple-darwin
 	source $$HOME/.cargo/env && cargo build --release --target x86_64-apple-darwin --features system-alloc
 	@cd target/x86_64-apple-darwin/release && \
@@ -242,7 +248,7 @@ endif
 linux-x64: check-docker create-dockerignore
 	@mkdir -p target/release
 	docker run --platform linux/amd64 --rm \
-	  -v "$$(pwd):/src" -w /src rust:1.85-alpine sh -eu -c '\
+          -v "$$(pwd):/src" -w /src rust:1.90-alpine sh -eu -c '\
 		apk add --no-cache \
 		    musl-dev \
 		    gcc g++ make cmake pkgconfig \
@@ -253,7 +259,7 @@ linux-x64: check-docker create-dockerignore
 		    patch perl ragel && \
 	        git openssl-dev curl && \
 		\
-		cargo test --workspace --all-targets --release ; \
+		cargo test --workspace --all-targets ; \
 		\
 		rustup target add x86_64-unknown-linux-musl && \
 		\
@@ -262,24 +268,16 @@ linux-x64: check-docker create-dockerignore
 		\
 		cargo build --release --target x86_64-unknown-linux-musl && \
 		cd target/x86_64-unknown-linux-musl/release && \
-		find "./$(PROJECT_NAME)" -type f -executable \
-		     -not -name "*.d" -not -name "*.rlib" \
-		     -exec sha256sum {} \; > CHECKSUM.txt \
+	    sha256sum kingfisher > CHECKSUM.txt && \
+	    tar -czf /src/target/release/kingfisher-linux-x64.tgz \
+	        kingfisher CHECKSUM.txt \
 	'
-	@cd target/release && \
-	  rm -rf $(PROJECT_NAME)-linux-x64.tgz && \
-	  cp ../x86_64-unknown-linux-musl/release/$(PROJECT_NAME) . && \
-	  cp ../x86_64-unknown-linux-musl/release/CHECKSUM.txt CHECKSUM-linux-x64.txt && \
-	  tar --no-xattrs -czf $(PROJECT_NAME)-linux-x64.tgz \
-	      $(PROJECT_NAME) CHECKSUM-linux-x64.txt && \
-	  rm $(PROJECT_NAME) && \
-	  sha256sum $(PROJECT_NAME)-linux-x64.tgz >> CHECKSUM-linux-x64.txt
 	$(MAKE) list-archives
 
 linux-arm64: check-docker create-dockerignore
 	@mkdir -p target/release
 	docker run --platform linux/arm64 --rm \
-	  -v "$$(pwd):/src" -w /src rust:1.85-alpine sh -eu -c '\
+          -v "$$(pwd):/src" -w /src rust:1.90-alpine sh -eu -c '\
 		apk add --no-cache \
 		    musl-dev \
 		    gcc g++ make cmake pkgconfig \
@@ -292,7 +290,7 @@ linux-arm64: check-docker create-dockerignore
 		\
 		rustup target add aarch64-unknown-linux-musl && \
 		\
-		cargo test --workspace --all-targets --release ; \
+		cargo test --workspace --all-targets ; \
 		\
 		export PKG_CONFIG_ALLOW_CROSS=1 ; \
 		export RUSTFLAGS="-C target-feature=+crt-static" ; \
@@ -300,18 +298,10 @@ linux-arm64: check-docker create-dockerignore
 		cargo build --release --target aarch64-unknown-linux-musl && \
 		\
 		cd target/aarch64-unknown-linux-musl/release && \
-		find "./$(PROJECT_NAME)" -type f -executable \
-		     -not -name "*.d" -not -name "*.rlib" \
-		     -exec sha256sum {} \; > CHECKSUM.txt \
+	    sha256sum kingfisher > CHECKSUM.txt && \
+	    tar -czf /src/target/release/kingfisher-linux-arm64.tgz \
+	        kingfisher CHECKSUM.txt \
 	'
-	@cd target/release && \
-	  rm -rf $(PROJECT_NAME)-linux-arm64.tgz && \
-	  cp ../aarch64-unknown-linux-musl/release/$(PROJECT_NAME) . && \
-	  cp ../aarch64-unknown-linux-musl/release/CHECKSUM.txt CHECKSUM-linux-arm64.txt && \
-	  tar --no-xattrs -czf $(PROJECT_NAME)-linux-arm64.tgz \
-	      $(PROJECT_NAME) CHECKSUM-linux-arm64.txt && \
-	  rm $(PROJECT_NAME) && \
-	  sha256sum $(PROJECT_NAME)-linux-arm64.tgz >> CHECKSUM-linux-arm64.txt
 	$(MAKE) list-archives
 
 
@@ -366,6 +356,13 @@ all: linux darwin
 	@echo -e "\nCombined Checksums:"
 	@cat target/release/CHECKSUMS.txt
 
+dockerfile:
+# Build for the host architecture (default)
+	docker build -f docker/Dockerfile -t kingfisher:latest .
+
+# Cross‑build for arm64 from an x64 machine
+	docker buildx build -f docker/Dockerfile --platform linux/arm64 -t kingfisher:arm64 .
+
 list-archives:
 	@echo -e "\n=== Built archives ==="
 	@found=0; \
@@ -391,7 +388,7 @@ check-rust:
 	  echo "Rust not found."; \
 	  exit 1; \
 	fi; \
-	required=1.85.0; \
+        required=1.90.0; \
 	if [ $$(printf '%s\n' "$$required" "$$version" | sort -V | head -n1) != "$$required" ]; then \
 	  echo "Rust version $$version is older than required $$required."; \
 	  exit 1; \
@@ -424,6 +421,3 @@ notices:
 	@echo "Generating third-party notices..."
 	@cargo install cargo-bundle-licenses
 	@cargo bundle-licenses --format yaml --output THIRD_PARTY_NOTICES
-
-evergreen-patch:
-	@evergreen patch --project kingfisher --variants all --tasks build

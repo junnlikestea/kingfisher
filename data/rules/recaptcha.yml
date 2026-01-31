@@ -5,12 +5,12 @@ rules:
       (?xi)
       recaptcha
       (?:.|[\n\r]){0,16}?
-      (?:SECRET|PRIVATE|ACCESS|KEY|TOKEN)
-      (?:.|[\n\r]){0,32}?
       \b
       (
         6l[c-f][a-z0-9_-].{36}
       )
+    pattern_requirements:
+      min_digits: 3
     min_entropy: 3
     confidence: medium
     examples:

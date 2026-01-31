@@ -2,12 +2,14 @@ rules:
   - name: Perplexity AI API Key
     id: kingfisher.perplexity.1
     pattern: |
-      (?xi)
+      (?x)
       \b
       (
         pplx-[A-Za-z0-9]{48}
       )
       \b
+    pattern_requirements:
+      min_digits: 2
     min_entropy: 3.8
     confidence: medium
     examples:

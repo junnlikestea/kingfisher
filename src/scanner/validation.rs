@@ -13,17 +13,96 @@ use futures::{stream, StreamExt};
 use indicatif::{ProgressBar, ProgressStyle};
 use liquid::Parser;
 use reqwest::{Client, StatusCode};
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 use tokio::{sync::Notify, time::timeout};
+use tracing::trace;
 
 use crate::{
+    access_map::AccessMapRequest,
     blob::BlobId,
     findings_store::{FindingsStore, FindingsStoreMessage},
     location::OffsetSpan,
     matcher::{Match, OwnedBlobMatch},
-    rules::rule,
-    validation::{collect_variables_and_dependencies, validate_single_match, CachedResponse},
+    rules::rule::Validation,
+    validation::{
+        collect_variables_and_dependencies, utils, validate_single_match, CachedResponse,
+    },
+    validation_body,
 };
+
+#[derive(Clone, Default)]
+pub struct AccessMapCollector {
+    inner: Arc<DashMap<u64, AccessMapRequest>>,
+}
+
+impl AccessMapCollector {
+    pub fn record_aws(&self, access_key: &str, secret_key: &str, fingerprint: String) {
+        let key = xxhash_rust::xxh3::xxh3_64(format!("aws|{access_key}|{secret_key}").as_bytes());
+        self.inner.entry(key).or_insert_with(|| AccessMapRequest::Aws {
+            access_key: access_key.to_string(),
+            secret_key: secret_key.to_string(),
+            session_token: None,
+            fingerprint,
+        });
+    }
+
+    pub fn record_gcp(&self, credential_json: &str, fingerprint: String) {
+        let key = xxhash_rust::xxh3::xxh3_64(credential_json.as_bytes());
+        self.inner.entry(key).or_insert_with(|| AccessMapRequest::Gcp {
+            credential_json: credential_json.to_string(),
+            fingerprint,
+        });
+    }
+
+    pub fn record_azure(
+        &self,
+        credential_json: &str,
+        containers: Option<Vec<String>>,
+        fingerprint: String,
+    ) {
+        let key = xxhash_rust::xxh3::xxh3_64(credential_json.as_bytes());
+        self.inner.entry(key).or_insert_with(|| AccessMapRequest::Azure {
+            credential_json: credential_json.to_string(),
+            containers,
+            fingerprint,
+        });
+    }
+
+    pub fn record_azure_devops(&self, token: &str, organization: &str, fingerprint: String) {
+        let key =
+            xxhash_rust::xxh3::xxh3_64(format!("azure_devops|{organization}|{token}").as_bytes());
+        self.inner.entry(key).or_insert_with(|| AccessMapRequest::AzureDevops {
+            token: token.to_string(),
+            organization: organization.to_string(),
+            fingerprint,
+        });
+    }
+
+    pub fn record_github(&self, token: &str, fingerprint: String) {
+        let key = xxhash_rust::xxh3::xxh3_64(format!("github|{token}").as_bytes());
+        self.inner
+            .entry(key)
+            .or_insert_with(|| AccessMapRequest::Github { token: token.to_string(), fingerprint });
+    }
+
+    pub fn record_gitlab(&self, token: &str, fingerprint: String) {
+        let key = xxhash_rust::xxh3::xxh3_64(format!("gitlab|{token}").as_bytes());
+        self.inner
+            .entry(key)
+            .or_insert_with(|| AccessMapRequest::Gitlab { token: token.to_string(), fingerprint });
+    }
+
+    pub fn record_slack(&self, token: &str, fingerprint: String) {
+        let key = xxhash_rust::xxh3::xxh3_64(format!("slack|{token}").as_bytes());
+        self.inner
+            .entry(key)
+            .or_insert_with(|| AccessMapRequest::Slack { token: token.to_string(), fingerprint });
+    }
+
+    pub fn into_requests(self) -> Vec<AccessMapRequest> {
+        self.inner.iter().map(|entry| entry.value().clone()).collect()
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 pub async fn run_secret_validation(
@@ -32,6 +111,10 @@ pub async fn run_secret_validation(
     client: &Client,
     cache: &Arc<SkipMap<String, CachedResponse>>,
     num_jobs: usize,
+    range: Option<std::ops::Range<usize>>,
+    access_map: Option<AccessMapCollector>,
+    validation_timeout: Duration,
+    validation_retries: u32,
 ) -> Result<()> {
     // ── 1. Concurrency & counters ───────────────────────────────────────────
     let concurrency = if num_jobs > 0 { num_jobs } else { num_cpus::get() };
@@ -40,27 +123,27 @@ pub async fn run_secret_validation(
     let fail_count = Arc::new(AtomicUsize::new(0));
 
     // ── 2. Fetch rules + matches ────────────────────────────────────────────
-    let (all_rules, all_matches_by_blob) = {
+    let (_all_rules, all_matches_by_blob) = {
         let ds = datastore.lock().unwrap();
         let rules = ds.get_rules()?;
         let mut map: FxHashMap<BlobId, Vec<Arc<FindingsStoreMessage>>> = FxHashMap::default();
-        for arc_msg in ds.get_matches().iter().map(Arc::clone) {
+        let matches = if let Some(r) = range.clone() {
+            ds.get_matches()[r].to_vec()
+        } else {
+            ds.get_matches().to_vec()
+        };
+
+        for arc_msg in matches.into_iter() {
             map.entry(arc_msg.1.id).or_default().push(arc_msg);
         }
         (rules, map)
     };
 
     // ── 3. Partition blobs ──────────────────────────────────────────────────
-    let rules_with_deps: FxHashSet<&str> = all_rules
-        .iter()
-        .filter(|r| !r.syntax().depends_on_rule.is_empty())
-        .map(|r| r.id())
-        .collect();
-
     let mut simple_matches = Vec::new();
     let mut dependent_blobs = FxHashMap::default(); // blob_id -- Vec<Arc<…>>
     for (blob_id, matches) in all_matches_by_blob {
-        if matches.iter().any(|m| rules_with_deps.contains(m.2.rule_text_id)) {
+        if matches.iter().any(|m| !m.2.rule.syntax().depends_on_rule.is_empty()) {
             dependent_blobs.insert(blob_id, matches);
         } else {
             simple_matches.extend(matches);
@@ -74,18 +157,34 @@ pub async fn run_secret_validation(
     if !simple_matches.is_empty() {
         let mut groups: FxHashMap<String, Vec<Arc<FindingsStoreMessage>>> = FxHashMap::default();
         for arc_msg in simple_matches {
-            let secret = arc_msg
-                .2
-                .groups
-                .captures
-                .get(1)
-                .or_else(|| arc_msg.2.groups.captures.get(0))
-                .map_or("", |c| c.value.as_ref());
-            groups
-                .entry(format!("{}|{}", arc_msg.2.rule_text_id, secret))
-                .or_default()
-                .push(arc_msg);
+            // VALIDATION DEDUP: Use get(0) to get the first/primary capture for grouping.
+            //
+            // This differs from fingerprint/reporting code (which uses get(1).or_else(get(0)))
+            // for backward compatibility reasons - changing fingerprint calculation would break
+            // historical baselines and dedup entries.
+            //
+            // For validation deduplication, we need the PRIMARY secret value to ensure each
+            // unique secret triggers a separate validation request. Using get(1) first would
+            // incorrectly pick up inner unnamed groups when patterns have nested captures
+            // like (?<REGEX>...(ABC|DEF)...), causing all matches to share the same
+            // validation result.
+            let secret = arc_msg.2.groups.captures.get(0).map_or("", |c| c.raw_value());
+            let group_key = format!("{}|{}", arc_msg.2.rule.id(), secret);
+            trace!(
+                rule_id = %arc_msg.2.rule.id(),
+                secret_value = %secret,
+                external_fingerprint = arc_msg.2.finding_fingerprint,
+                validation_group_key = %group_key,
+                "Grouping finding for validation"
+            );
+            groups.entry(group_key).or_default().push(arc_msg);
         }
+
+        trace!(
+            total_findings = groups.values().map(|v| v.len()).sum::<usize>(),
+            unique_validation_groups = groups.len(),
+            "Validation grouping complete (internal dedup)"
+        );
 
         let validation_results = DashMap::<String, CachedResponse>::new();
 
@@ -109,28 +208,24 @@ pub async fn run_secret_validation(
             let client = client.clone();
             let cache_glob = cache.clone();
             let val_res = &validation_results;
-            let rules = &all_rules;
             let success = success_count.clone();
             let fail = fail_count.clone();
             // *** FIX: Clone the progress bar for each concurrent task ***
             let pb = pb.clone();
+            let access_map = access_map.clone();
 
             async move {
-                let secret = rep_arc
-                    .2
-                    .groups
-                    .captures
-                    .get(1)
-                    .or_else(|| rep_arc.2.groups.captures.get(0))
-                    .map_or("", |c| c.value.as_ref());
-                let key = format!("{}|{}", rep_arc.2.rule_text_id, secret);
+                // VALIDATION DEDUP: Use get(0) for the primary secret value.
+                // See comment above for why this differs from fingerprint/reporting code.
+                let secret = rep_arc.2.groups.captures.get(0).map_or("", |c| c.raw_value());
+                let key = format!("{}|{}", rep_arc.2.rule.id(), secret);
 
                 match val_res.entry(key.clone()) {
                     dashmap::mapref::entry::Entry::Occupied(_) => return,
                     dashmap::mapref::entry::Entry::Vacant(entry) => {
                         // *** FIX: Corrected placeholder to match struct definition ***
                         entry.insert(CachedResponse {
-                            body: String::new(),
+                            body: validation_body::from_string(String::new()),
                             status: StatusCode::ACCEPTED,
                             is_valid: false,
                             timestamp: Instant::now(),
@@ -138,8 +233,10 @@ pub async fn run_secret_validation(
                     }
                 }
 
-                let rule = find_rule_for_match(rules, rep_arc.2.rule_text_id).unwrap();
-                let mut om = OwnedBlobMatch::convert_match_to_owned_blobmatch(&rep_arc.2, rule);
+                let mut om = OwnedBlobMatch::convert_match_to_owned_blobmatch(
+                    &rep_arc.2,
+                    rep_arc.2.rule.clone(),
+                );
 
                 validate_single(
                     &mut om,
@@ -152,6 +249,9 @@ pub async fn run_secret_validation(
                     &success,
                     &fail,
                     &cache_glob,
+                    access_map.as_ref(),
+                    validation_timeout,
+                    validation_retries,
                 )
                 .await;
 
@@ -211,7 +311,6 @@ pub async fn run_secret_validation(
 
         let val_cache = Arc::new(DashMap::<String, CachedResponse>::new());
         let in_flight = Arc::new(DashMap::<String, ()>::new());
-        let rules_ref = Arc::new(all_rules.clone());
 
         for chunk in blob_ids.chunks(chunk_size) {
             let tasks: Vec<_> = chunk
@@ -225,15 +324,18 @@ pub async fn run_secret_validation(
                     let success = success_count.clone();
                     let fail = fail_count.clone();
                     let cache_glob = cache.clone();
-                    let rules = rules_ref.clone();
+                    let access_map = access_map.clone();
+                    let validation_timeout = validation_timeout;
+                    let validation_retries = validation_retries;
 
                     async move {
                         let owned = matches_for_blob
                             .iter()
                             .map(|arc_msg| {
-                                let rule = find_rule_for_match(&rules, arc_msg.2.rule_text_id)
-                                    .expect("rule");
-                                OwnedBlobMatch::convert_match_to_owned_blobmatch(&arc_msg.2, rule)
+                                OwnedBlobMatch::convert_match_to_owned_blobmatch(
+                                    &arc_msg.2,
+                                    arc_msg.2.rule.clone(),
+                                )
                             })
                             .collect::<Vec<_>>();
 
@@ -258,7 +360,7 @@ pub async fn run_secret_validation(
                                 let success = success.clone();
                                 let fail = fail.clone();
                                 let cache_glob = cache_glob.clone();
-
+                                let access_map = access_map.clone();
                                 async move {
                                     validate_single(
                                         &mut rep,
@@ -271,6 +373,9 @@ pub async fn run_secret_validation(
                                         &success,
                                         &fail,
                                         &cache_glob,
+                                        access_map.as_ref(),
+                                        validation_timeout,
+                                        validation_retries,
                                     )
                                     .await;
                                     for d in &mut dups {
@@ -335,28 +440,7 @@ pub async fn run_secret_validation(
         ds.replace_matches(updated_arcs);
     }
 
-    // ── 5. Done ─────────────────────────────────────────────────────────────
-    println!(
-        "Validation complete – {} succeeded, {} failed",
-        success_count.load(Ordering::Relaxed),
-        fail_count.load(Ordering::Relaxed)
-    );
     Ok(())
-}
-
-/// Returns `Some(Arc<Rule>)` if a matching rule is found; otherwise returns `None`.
-/// Callers can decide how to handle the `None` case (e.g., skip processing).
-fn find_rule_for_match(
-    all_rules: &[Arc<rule::Rule>],
-    rule_text_id: &str,
-) -> Option<Arc<rule::Rule>> {
-    match all_rules.iter().find(|r| r.syntax().id == rule_text_id).cloned() {
-        Some(rule) => Some(rule),
-        None => {
-            eprintln!("Warning: no rule found with id '{}'. Skipping.", rule_text_id);
-            None
-        }
-    }
 }
 
 // ---------------------------------------------------
@@ -373,16 +457,10 @@ async fn validate_single(
     success_count: &AtomicUsize,
     fail_count: &AtomicUsize,
     cache2: &Arc<SkipMap<String, CachedResponse>>,
+    access_map: Option<&AccessMapCollector>,
+    validation_timeout: Duration,
+    validation_retries: u32,
 ) {
-    // Bypass validation if the rule is prevalidated (eg a Private Key)
-    if om.rule.syntax().prevalidated {
-        om.validation_success = true;
-        om.validation_response_status = http::StatusCode::OK;
-        om.validation_response_body = "Prevalidated".to_string();
-        success_count.fetch_add(1, Ordering::Relaxed);
-        return;
-    }
-
     // Build key
     let dep_vars_str = dep_vars
         .get(om.rule.id())
@@ -392,7 +470,7 @@ async fn validate_single(
             sorted.into_iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<_>>().join("|")
         })
         .unwrap_or_default();
-    let capture0 = om.captures.captures.get(0).map_or(String::new(), |c| c.value.to_string());
+    let capture0 = om.captures.captures.get(0).map_or(String::new(), |c| c.raw_value().to_string());
     let cache_key = format!("{}|{}|{}", om.rule.name(), capture0, dep_vars_str);
     // Check cache first
     if let Some(cached) = cache.get(&cache_key) {
@@ -404,6 +482,7 @@ async fn validate_single(
         } else if om.validation_response_status != http::StatusCode::CONTINUE {
             fail_count.fetch_add(1, Ordering::Relaxed);
         }
+        maybe_record_access_map(om, access_map);
         return;
     }
 
@@ -424,14 +503,25 @@ async fn validate_single(
             } else if om.validation_response_status != http::StatusCode::CONTINUE {
                 fail_count.fetch_add(1, Ordering::Relaxed);
             }
+            maybe_record_access_map(om, access_map);
             return; // Exit early if cached result is found
         }
         return;
     }
     // If we reach here, we're the first task to validate this key
     // Perform validation
-    let outcome = timeout(Duration::from_secs(30), async {
-        validate_single_match(om, parser, client, dep_vars, missing_deps, cache2).await
+    let outcome = timeout(validation_timeout, async {
+        validate_single_match(
+            om,
+            parser,
+            client,
+            dep_vars,
+            missing_deps,
+            cache2,
+            validation_timeout,
+            validation_retries,
+        )
+        .await
     })
     .await;
     // Store result in cache
@@ -454,11 +544,12 @@ async fn validate_single(
         }
         Err(_) => {
             om.validation_success = false;
-            om.validation_response_body = "Validation timed out".to_string();
+            om.validation_response_body = validation_body::from_string("Validation timed out");
             om.validation_response_status = http::StatusCode::REQUEST_TIMEOUT;
             fail_count.fetch_add(1, Ordering::Relaxed);
         }
     }
+    maybe_record_access_map(om, access_map);
     // Remove from `in_progress`
     // in_progress.remove(&cache_key);
     in_progress.remove(&cache_key);
@@ -483,6 +574,164 @@ fn build_cache_key(
         .unwrap_or_default();
     // For demonstration, we’ll do a simplistic approach
     // You can adapt from your existing logic
-    let capture0 = om.captures.captures.get(0).map_or(String::new(), |c| c.value.to_string());
+    let capture0 = om.captures.captures.get(0).map_or(String::new(), |c| c.raw_value().to_string());
     format!("{}|{}|{}", om.rule.name(), capture0, dep_vars_str)
+}
+
+fn maybe_record_access_map(om: &OwnedBlobMatch, collector: Option<&AccessMapCollector>) {
+    let is_gitlab_rule = om.rule.id().starts_with("kingfisher.gitlab.");
+    let validation_ok =
+        om.validation_success || (is_gitlab_rule && om.validation_response_status.is_success());
+    let collector = match collector {
+        Some(c) if validation_ok => c,
+        _ => return,
+    };
+
+    let captures = utils::process_captures(&om.captures);
+    let fp = om.finding_fingerprint.to_string();
+
+    match om.rule.syntax().validation {
+        Some(Validation::AWS) => {
+            let secret = captures
+                .iter()
+                .find(|(name, ..)| name == "TOKEN")
+                .map(|(_, value, ..)| value.clone())
+                .unwrap_or_default();
+
+            let mut akid = utils::find_closest_variable(&captures, &secret, "TOKEN", "AKID")
+                .unwrap_or_default();
+
+            if akid.is_empty() {
+                akid = extract_akid_from_body(&om.validation_response_body).unwrap_or_default();
+            }
+
+            if !akid.is_empty() && !secret.is_empty() {
+                collector.record_aws(&akid, &secret, fp.clone());
+            }
+        }
+        Some(Validation::GCP) => {
+            if let Some((_, value, ..)) = captures.iter().find(|(name, ..)| name == "TOKEN") {
+                if !value.is_empty() {
+                    collector.record_gcp(value, fp.clone());
+                }
+            }
+        }
+        Some(Validation::AzureStorage) => {
+            let storage_key = captures
+                .iter()
+                .find(|(name, ..)| name == "TOKEN")
+                .map(|(_, value, ..)| value.clone())
+                .unwrap_or_default();
+            let storage_account =
+                utils::find_closest_variable(&captures, &storage_key, "TOKEN", "AZURENAME")
+                    .unwrap_or_default();
+
+            let mut storage_account = storage_account;
+            if storage_account.is_empty() {
+                storage_account =
+                    extract_azure_storage_account_from_body(&om.validation_response_body)
+                        .unwrap_or_default();
+            }
+            let containers_hint =
+                extract_azure_storage_containers_from_body(&om.validation_response_body);
+
+            if !storage_account.is_empty() && !storage_key.is_empty() {
+                let creds_json = format!(
+                    r#"{{"storage_account":"{}","storage_key":"{}"}}"#,
+                    storage_account, storage_key
+                );
+                collector.record_azure(&creds_json, containers_hint, fp.clone());
+            }
+        }
+        _ => {
+            if om.rule.id().starts_with("kingfisher.github.") {
+                if let Some((_, value, ..)) = captures.iter().find(|(name, ..)| name == "TOKEN") {
+                    if !value.is_empty() {
+                        collector.record_github(value, fp.clone());
+                    }
+                }
+            }
+            if om.rule.id().starts_with("kingfisher.azure.devops.") {
+                let token = captures
+                    .iter()
+                    .find(|(name, ..)| name == "TOKEN")
+                    .map(|(_, value, ..)| value.clone())
+                    .unwrap_or_default();
+                let mut organization =
+                    utils::find_closest_variable(&captures, &token, "TOKEN", "AZURE_DEVOPS_ORG")
+                        .unwrap_or_default();
+                if organization.is_empty() {
+                    organization = extract_azure_devops_org_from_body(&om.validation_response_body)
+                        .unwrap_or_default();
+                }
+
+                if !token.is_empty() && !organization.is_empty() {
+                    collector.record_azure_devops(&token, &organization, fp.clone());
+                }
+            }
+            if is_gitlab_rule {
+                if let Some((_, value, ..)) = captures.iter().find(|(name, ..)| name == "TOKEN") {
+                    if !value.is_empty() {
+                        collector.record_gitlab(value, fp.clone());
+                    }
+                }
+            }
+            if om.rule.id().starts_with("kingfisher.slack.") {
+                if let Some((_, value, ..)) = captures.iter().find(|(name, ..)| name == "TOKEN") {
+                    if !value.is_empty() {
+                        collector.record_slack(value, fp);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn extract_akid_from_body(body: &validation_body::ValidationResponseBody) -> Option<String> {
+    static AKID_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
+        regex::Regex::new(
+            r"(?xi)\b(?:A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[0-9A-Z]{16}\b",
+        )
+        .expect("valid regex")
+    });
+
+    let text = validation_body::clone_as_string(body);
+    AKID_RE.find(&text).map(|m| m.as_str().to_string())
+}
+
+fn extract_azure_storage_account_from_body(
+    body: &validation_body::ValidationResponseBody,
+) -> Option<String> {
+    static ACCOUNT_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
+        regex::Regex::new(r"(?i)Account:\s*([a-z0-9]{3,24})").expect("valid regex")
+    });
+
+    let text = validation_body::clone_as_string(body);
+    ACCOUNT_RE.captures(&text).and_then(|caps| caps.get(1).map(|m| m.as_str().to_string()))
+}
+
+fn extract_azure_storage_containers_from_body(
+    body: &validation_body::ValidationResponseBody,
+) -> Option<Vec<String>> {
+    static CONTAINERS_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
+        regex::Regex::new(r"(?i)Containers:\s*(\\[[^\\]]*\\])").expect("valid regex")
+    });
+
+    let text = validation_body::clone_as_string(body);
+    let capture = CONTAINERS_RE
+        .captures(&text)
+        .and_then(|caps| caps.get(1).map(|m| m.as_str().to_string()))?;
+    serde_json::from_str::<Vec<String>>(&capture).ok()
+}
+
+fn extract_azure_devops_org_from_body(
+    body: &validation_body::ValidationResponseBody,
+) -> Option<String> {
+    static ORG_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
+        regex::Regex::new(r#"(?i)https?://dev\.azure\.com/([a-z0-9][a-z0-9-]{0,61}[a-z0-9])"#)
+            .expect("valid regex")
+    });
+
+    let text = validation_body::clone_as_string(body);
+    ORG_RE.captures(&text).and_then(|caps| caps.get(1).map(|m| m.as_str().to_string()))
 }

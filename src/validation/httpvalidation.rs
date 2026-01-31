@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, future::Future, str::FromStr, time::Duration};
 
+use crate::validation::GLOBAL_USER_AGENT;
 use anyhow::{anyhow, Error, Result};
 use http::StatusCode;
 use liquid::Object;
@@ -29,6 +30,7 @@ pub fn generate_http_cache_key_parts(
     method: &str,
     url: &Url,
     headers: &BTreeMap<String, String>,
+    body: Option<&str>,
 ) -> String {
     let method = method.to_uppercase(); // ensure "get" == "GET"
     let url = url.as_str(); // canonical form from `reqwest::Url`
@@ -48,6 +50,13 @@ pub fn generate_http_cache_key_parts(
         hasher.update(b"\0");
     }
 
+    // Include the request body in the cache key if present
+    if let Some(b) = body {
+        hasher.update(b"BODY\0");
+        hasher.update(b.as_bytes());
+        hasher.update(b"\0");
+    }
+
     // Hex-encode and prefix so callers can tell this key came from HTTP logic
     format!("HTTP:{:x}", hasher.finalize())
 }
@@ -64,6 +73,7 @@ pub fn build_request_builder(
     url: &Url,
     headers: &BTreeMap<String, String>,
     body: &Option<String>,
+    timeout: Duration,
     parser: &liquid::Parser,
     globals: &liquid::Object,
 ) -> Result<RequestBuilder, String> {
@@ -71,19 +81,14 @@ pub fn build_request_builder(
         debug!("{}", err_msg);
         err_msg
     })?;
-    let mut request_builder = client.request(method, url.clone()).timeout(Duration::from_secs(10));
+    let mut request_builder = client.request(method, url.clone()).timeout(timeout);
     let custom_headers = process_headers(headers, parser, globals, url)
         .map_err(|e| format!("Error processing headers: {}", e))?;
 
     // Prepare a standard set of headers.
-    let user_agent = format!(
-        "{}/{}",
-        //"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
-        env!("CARGO_PKG_NAME"),
-        env!("CARGO_PKG_VERSION")
-    );
+    let user_agent = GLOBAL_USER_AGENT.as_str();
     let standard_headers = [
-        (header::USER_AGENT, user_agent.as_str()),
+        (header::USER_AGENT, user_agent),
         (
             header::ACCEPT,
             "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -92,12 +97,16 @@ pub fn build_request_builder(
         (header::ACCEPT_ENCODING, "gzip, deflate, br"),
         (header::CONNECTION, "keep-alive"),
     ];
-    // Extend custom headers with the standard ones (overwriting any duplicates).
-    let mut combined_headers = custom_headers;
+    // Start with the standard headers and then overlay any custom headers so
+    // caller-specified values take precedence over defaults.
+    let mut combined_headers = HeaderMap::new();
     for (name, value) in &standard_headers {
         if let Ok(hv) = HeaderValue::from_str(value) {
             combined_headers.insert(name.clone(), hv);
         }
+    }
+    for (name, value) in custom_headers.iter() {
+        combined_headers.insert(name.clone(), value.clone());
     }
     request_builder = request_builder.headers(combined_headers);
 
@@ -199,6 +208,9 @@ where
             return result;
         }
         retries += 1;
+        if retries > max_retries {
+            break;
+        }
         let backoff = backoff_min.saturating_mul(2u32.pow(retries as u32)).min(backoff_max);
         sleep(backoff).await;
     }
@@ -294,7 +306,16 @@ fn body_looks_like_html(body: &str, headers: &HeaderMap) -> bool {
         .unwrap_or(false);
 
     // ---- 2. early-body scan (<=1024 bytes) --------------------------------
-    let probe = body[..body.len().min(1024)].to_ascii_lowercase();
+    // Find the last character boundary at or before 1024 bytes to avoid UTF-8 boundary issues
+    // Walk backward at most 3 bytes (UTF-8 max char size is 4 bytes) to find valid boundary
+    let mut end = 1024.min(body.len());
+    while end > 0 && !body.is_char_boundary(end) {
+        end -= 1;
+    }
+    let probe = &body[..end];
+    // Trim any leading whitespace so we still catch HTML that starts after newlines/indentation.
+    let trimmed = probe.trim_start_matches(|c: char| c.is_whitespace());
+    let probe = trimmed.to_ascii_lowercase();
     let body_looks_htmlish = probe.starts_with('<') && probe.contains("<html");
 
     // ⇒ Only HTML if **both** header and body agree
@@ -437,12 +458,27 @@ mod tests {
             .expect("building reqwest client");
         let parser = liquid::ParserBuilder::with_stdlib().build().unwrap();
         let globals = liquid::Object::new();
-        let headers =
-            BTreeMap::from([("Content-Type".to_string(), "application/json".to_string())]);
+        let headers = BTreeMap::from([
+            ("Content-Type".to_string(), "application/json".to_string()),
+            ("Accept".to_string(), "application/custom".to_string()),
+        ]);
         let url = Url::from_str("https://example.com").unwrap();
-        let result =
-            build_request_builder(&client, "GET", &url, &headers, &None, &parser, &globals);
-        assert!(result.is_ok());
+        let result = build_request_builder(
+            &client,
+            "GET",
+            &url,
+            &headers,
+            &None,
+            Duration::from_secs(10),
+            &parser,
+            &globals,
+        )
+        .expect("building request");
+        let req = result.build().expect("finalizing request");
+        assert_eq!(
+            req.headers().get(header::ACCEPT).and_then(|v| v.to_str().ok()),
+            Some("application/custom"),
+        );
     }
     #[tokio::test]
     async fn test_retry_request() {
@@ -491,7 +527,7 @@ mod tests {
     }
     #[test]
     fn test_validate_response_slack_webhook() {
-        // 1️⃣  Build matchers equivalent to rule kingfisher.slack.4
+        // Build matchers equivalent to rule kingfisher.slack.4
         let matchers = vec![
             ResponseMatcher::WordMatch {
                 r#type: "word-match".to_string(),
@@ -507,16 +543,104 @@ mod tests {
             },
         ];
 
-        // 2️⃣  Simulate the real Slack response you posted
+        // Simulate the real Slack response you posted
         let body = "invalid_payload";
         let status = StatusCode::BAD_REQUEST; // 400
         let mut headers = HeaderMap::new();
         headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/plain"));
 
-        // 3️⃣  Call validate_response with html_allowed = false
+        // Call validate_response with html_allowed = false
         let ok = validate_response(&matchers, body, &status, &headers, false);
 
-        // 4️⃣  It *should* be valid (true) because all matcher conditions hold
+        // 4It *should* be valid (true) because all matcher conditions hold
         assert!(ok, "Slack webhook response should be considered ACTIVE");
+    }
+
+    #[test]
+    fn test_body_looks_like_html_trims_whitespace() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+
+        let body = "\n\n   \n<!DOCTYPE html>\n<html lang=\"en\"><body>page</body></html>";
+
+        assert!(body_looks_like_html(body, &headers));
+    }
+
+    #[test]
+    fn test_html_response_rejected_when_not_allowed() {
+        let matchers = vec![ResponseMatcher::StatusMatch {
+            r#type: "status-match".to_string(),
+            status: vec![StatusCode::OK.into()],
+            match_all_status: false,
+            negative: false,
+        }];
+
+        let mut headers = HeaderMap::new();
+        headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+
+        let body = "\n<html><body>Sign in</body></html>";
+
+        let ok = validate_response(&matchers, body, &StatusCode::OK, &headers, false);
+
+        assert!(!ok, "HTML responses should be rejected unless explicitly allowed");
+    }
+
+    #[test]
+    fn test_body_looks_like_html_utf8_boundary() {
+        // Test case for UTF-8 boundary issue: multi-byte character at 1024-byte boundary
+        // This reproduces the bug where slicing at byte 1024 would panic if it's in the middle
+        // of a multi-byte character (e.g., Chinese character '业' spans bytes 1023..1026)
+        let mut headers = HeaderMap::new();
+        headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+
+        // HTML at the start, with padding to push a multi-byte char to byte 1024
+        // This mirrors the real crash: HTML response from Gitee with Chinese chars
+        let html_start = "<!DOCTYPE html><html lang=\"zh-CN\"><head><title>";
+        let padding_len = 1023 - html_start.len();
+        let body = format!(
+            "{}{}业</title></head><body>Gitee</body></html>",
+            html_start,
+            "x".repeat(padding_len)
+        );
+
+        // Verify our test setup: multi-byte char should be at byte 1023
+        assert_eq!(body.as_bytes()[1023], 0xE4, "Expected first byte of '业' at position 1023");
+
+        // This should not panic AND should correctly identify HTML
+        let result = body_looks_like_html(&body, &headers);
+        assert!(
+            result,
+            "Should correctly identify HTML even with multi-byte characters at boundary"
+        );
+    }
+
+    #[test]
+    fn test_cache_key_includes_body() {
+        let url = Url::from_str("https://example.com/api").unwrap();
+        let headers =
+            BTreeMap::from([("Content-Type".to_string(), "application/json".to_string())]);
+
+        // Same method, url, headers but different bodies should produce different cache keys
+        let key_no_body = generate_http_cache_key_parts("POST", &url, &headers, None);
+        let key_body_a =
+            generate_http_cache_key_parts("POST", &url, &headers, Some(r#"{"value": "abc"}"#));
+        let key_body_b =
+            generate_http_cache_key_parts("POST", &url, &headers, Some(r#"{"value": "xyz"}"#));
+
+        // All three should be different
+        assert_ne!(
+            key_no_body, key_body_a,
+            "Cache key with body should differ from key without body"
+        );
+        assert_ne!(
+            key_no_body, key_body_b,
+            "Cache key with body should differ from key without body"
+        );
+        assert_ne!(key_body_a, key_body_b, "Cache keys with different bodies should be different");
+
+        // Same body should produce same key
+        let key_body_a_dup =
+            generate_http_cache_key_parts("POST", &url, &headers, Some(r#"{"value": "abc"}"#));
+        assert_eq!(key_body_a, key_body_a_dup, "Same inputs should produce same cache key");
     }
 }

@@ -1,7 +1,5 @@
 use std::{
-    borrow::Cow,
     hash::{Hash, Hasher},
-    io::Write,
     str,
     sync::{Arc, Mutex},
 };
@@ -10,7 +8,6 @@ use anyhow::Result;
 use base64::{engine::general_purpose, Engine};
 use bstr::BString;
 use http::StatusCode;
-use lazy_static::lazy_static;
 use regex::bytes::Regex;
 use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 use schemars::{
@@ -19,7 +16,6 @@ use schemars::{
     JsonSchema,
 };
 use serde::{Deserialize, Serialize};
-use sha1::{Digest, Sha1};
 use smallvec::SmallVec;
 use tracing::debug;
 use xxhash_rust::xxh3::xxh3_64;
@@ -27,18 +23,27 @@ use xxhash_rust::xxh3::xxh3_64;
 use crate::{
     blob::{Blob, BlobId, BlobIdMap},
     entropy::calculate_shannon_entropy,
-    location::{Location, LocationMapping, OffsetSpan},
+    inline_ignore::InlineIgnoreConfig,
+    location::{Location, LocationMapping, OffsetSpan, SourcePoint, SourceSpan},
     origin::OriginSet,
     parser,
     parser::{Checker, Language},
     rule_profiling::{ConcurrentRuleProfiler, RuleStats, RuleTimer},
-    rules::rule::Rule,
+    rules::rule::{PatternRequirementContext, PatternValidationResult, Rule, Validation},
     rules_database::RulesDatabase,
-    safe_list::is_safe_match,
+    safe_list::{is_safe_match, is_user_match},
     scanner_pool::ScannerPool,
     snippet::Base64BString,
-    util::{intern, redact_value},
+    util::intern,
+    validation::{is_parseable_mongodb_uri, is_parseable_mysql_uri, is_parseable_postgres_uri},
+    validation_body::{self, ValidationResponseBody},
 };
+
+const MAX_CHUNK_SIZE: usize = 1 << 30; // 1 GiB per scan segment
+const CHUNK_OVERLAP: usize = 64 * 1024; // 64 KiB overlap to catch boundary matches
+const BASE64_SCAN_LIMIT: usize = 64 * 1024 * 1024; // skip expensive Base64 pass on huge blobs
+const TREE_SITTER_MAX_LIMIT: usize = 64 * 1024; // only run tree-sitter on blobs <= 64 KiB
+const TREE_SITTER_MIN_LIMIT: usize = 1 * 1024; // only run tree-sitter on blobs >= 1 KiB
 
 // -------------------------------------------------------------------------------------------------
 // RawMatch
@@ -61,10 +66,11 @@ pub struct OwnedBlobMatch {
     pub finding_fingerprint: u64,
     pub matching_input_offset_span: OffsetSpan,
     pub captures: SerializableCaptures,
-    pub validation_response_body: String,
+    pub validation_response_body: ValidationResponseBody,
     pub validation_response_status: StatusCode,
     pub validation_success: bool,
     pub calculated_entropy: f32,
+    pub is_base64: bool,
 }
 impl<'a> Matcher<'a> {
     pub fn get_profiling_report(&self) -> Option<Vec<RuleStats>> {
@@ -85,17 +91,26 @@ impl OwnedBlobMatch {
                 .unwrap_or(StatusCode::CONTINUE),
             validation_success: m.validation_success,
             calculated_entropy: m.calculated_entropy,
+            is_base64: m.is_base64,
         }
     }
 
     pub fn from_blob_match(blob_match: BlobMatch) -> Self {
-        // Get the matching value from capture group 1 (or 0 if not available)
+        // EXTERNAL FINGERPRINT: Use get(1).or_else(get(0)) for backward compatibility.
+        //
+        // This indexing is intentionally different from the internal `validation_dedup_key()`
+        // (which uses get(0)) to maintain stable external fingerprints. Changing this would break:
+        // - Historical baselines that rely on fingerprint matching
+        // - Dedup entries stored in external systems
+        //
+        // For rules with nested captures like (?<REGEX>...(ABC)...), this may pick up
+        // the inner group, but that behavior is now established and must be preserved.
         let matching_finding = blob_match
             .captures
             .captures
             .get(1)
             .or_else(|| blob_match.captures.captures.get(0))
-            .map(|capture| capture.value.as_bytes().to_vec())
+            .map(|capture| capture.raw_value().as_bytes().to_vec())
             .unwrap_or_else(Vec::new);
 
         let mut owned_blob_match = OwnedBlobMatch {
@@ -108,6 +123,7 @@ impl OwnedBlobMatch {
             validation_success: blob_match.validation_success,
             calculated_entropy: blob_match.calculated_entropy,
             finding_fingerprint: 0, //default
+            is_base64: blob_match.is_base64,
         };
 
         // Convert matching_finding to a &str (using lossy conversion if needed)
@@ -149,11 +165,12 @@ pub struct BlobMatch<'a> {
     /// The capture groups from the match
     pub captures: SerializableCaptures, // regex::bytes::Captures<'a>,
 
-    pub validation_response_body: String,
+    pub validation_response_body: ValidationResponseBody,
     pub validation_response_status: StatusCode,
 
     pub validation_success: bool,
     pub calculated_entropy: f32,
+    pub is_base64: bool,
 }
 #[derive(Clone)]
 struct UserData {
@@ -193,6 +210,12 @@ pub struct Matcher<'a> {
 
     /// Rule profiler for measuring performance of individual rules
     profiler: Option<Arc<ConcurrentRuleProfiler>>,
+
+    /// Configuration that controls inline ignore directives
+    inline_ignore_config: InlineIgnoreConfig,
+
+    /// Whether matches should honour `ignore_if_contains` requirements.
+    respect_ignore_if_contains: bool,
 }
 /// This `Drop` implementation updates the `global_stats` with the local stats
 impl<'a> Drop for Matcher<'a> {
@@ -220,6 +243,9 @@ impl<'a> Matcher<'a> {
         global_stats: Option<&'a Mutex<MatcherStats>>,
         enable_profiling: bool,
         shared_profiler: Option<Arc<ConcurrentRuleProfiler>>,
+        extra_ignore_directives: &[String],
+        disable_inline_ignores: bool,
+        respect_ignore_if_contains: bool,
     ) -> Result<Self> {
         // Changed: removed `with_capacity(16384)` so we don't pre-allocate a large Vec
         let raw_matches_scratch = Vec::new();
@@ -241,6 +267,12 @@ impl<'a> Matcher<'a> {
             seen_blobs,
             user_data,
             profiler,
+            inline_ignore_config: if disable_inline_ignores {
+                InlineIgnoreConfig::disabled()
+            } else {
+                InlineIgnoreConfig::new(extra_ignore_directives)
+            },
+            respect_ignore_if_contains,
         })
     }
 
@@ -251,17 +283,28 @@ impl<'a> Matcher<'a> {
         self.user_data.raw_matches_scratch.reserve(prev_capacity.max(64));
 
         self.user_data.input_len = input.len() as u64;
-        // self.vs_scanner.scan(input, |rid, from, to, _flags| {
-        self.scanner_pool.with(|scanner| {
-            scanner.scan(input, |rule_id, from, to, _flags| {
-                self.user_data.raw_matches_scratch.push(RawMatch {
-                    rule_id,
-                    start_idx: from,
-                    end_idx: to,
-                });
-                vectorscan_rs::Scan::Continue
-            })
-        })?;
+
+        let mut offset: usize = 0;
+        while offset < input.len() {
+            let end = (offset + MAX_CHUNK_SIZE).min(input.len());
+            let slice = &input[offset..end];
+            let base = offset as u64;
+            self.scanner_pool.with(|scanner| {
+                scanner.scan(slice, |rule_id, from, to, _flags| {
+                    self.user_data.raw_matches_scratch.push(RawMatch {
+                        rule_id,
+                        start_idx: from + base,
+                        end_idx: to + base,
+                    });
+                    vectorscan_rs::Scan::Continue
+                })
+            })?;
+
+            if end == input.len() {
+                break;
+            }
+            offset = end.saturating_sub(CHUNK_OVERLAP);
+        }
 
         Ok(())
     }
@@ -273,6 +316,7 @@ impl<'a> Matcher<'a> {
         lang: Option<String>,
         redact: bool,
         no_dedup: bool,
+        no_base64: bool,
     ) -> Result<ScanResult<'b>>
     where
         'a: 'b,
@@ -282,17 +326,6 @@ impl<'a> Matcher<'a> {
         self.local_stats.bytes_seen += blob.bytes().len() as u64;
         self.local_stats.blobs_scanned += 1;
         self.local_stats.bytes_scanned += blob.bytes().len() as u64;
-
-        // Check if blob was already seen and respect no_dedup flag
-        if !no_dedup {
-            if let Some(had_matches) = self.seen_blobs.get(&blob.id) {
-                return Ok(if had_matches {
-                    ScanResult::SeenWithMatches
-                } else {
-                    ScanResult::SeenSansMatches
-                });
-            }
-        }
 
         // Extract filename from origin
         let filename = origin
@@ -305,36 +338,55 @@ impl<'a> Matcher<'a> {
         // Perform the scan
         self.scan_bytes_raw(&blob.bytes(), &filename)?;
 
-        // Early exit if no matches found
-        if self.user_data.raw_matches_scratch.is_empty() {
-            // Only record in seen_blobs if deduplication is enabled
-            if !no_dedup {
-                return Ok(match self.seen_blobs.insert(blob.id, false) {
-                    None => ScanResult::New(Vec::new()),
-                    Some(true) => ScanResult::SeenWithMatches,
-                    Some(false) => ScanResult::SeenSansMatches,
-                });
-            } else {
-                return Ok(ScanResult::New(Vec::new()));
-            }
+        // Opportunistically look for standalone Base64 blobs. If neither
+        // the raw scan nor this check yields anything, we can return early
+        // before doing any heavier work.
+        let mut b64_items = if no_base64 || blob.len() > BASE64_SCAN_LIMIT {
+            Vec::new()
+        } else {
+            get_base64_strings(blob.bytes())
+        };
+
+        let lang_hint = lang.as_deref();
+        let has_raw_matches = !self.user_data.raw_matches_scratch.is_empty();
+        let has_base64_items = !b64_items.is_empty();
+
+        if !has_raw_matches && !has_base64_items {
+            return Ok(ScanResult::New(Vec::new()));
         }
 
         let rules_db = self.rules_db;
         let mut seen_matches = FxHashSet::default();
-        let mut previous_matches = Vec::new();
-        let tree_sitter_result = lang.and_then(|lang_str| {
-            get_language_and_queries(&lang_str).and_then(|(language, queries)| {
-                let checker = Checker { language, rules: queries };
-                match checker.check(&blob.bytes()) {
-                    Ok(results) => Some(results),
-                    Err(e) => {
-                        println!("Error in checker.check: {}", e);
-                        None
+        let mut previous_matches: FxHashMap<usize, Vec<OffsetSpan>> = FxHashMap::default();
+
+        let blob_len = blob.len();
+
+        let should_run_tree_sitter = blob_len > 0
+            && blob_len <= TREE_SITTER_MAX_LIMIT
+            && blob_len >= TREE_SITTER_MIN_LIMIT
+            && has_raw_matches
+            && lang_hint.is_some()
+            && !no_base64; //tree-sitter parsing is turned off when base64 scanning is disabled
+
+        let tree_sitter_result = if should_run_tree_sitter {
+            lang_hint.and_then(|lang_str| {
+                get_language_and_queries(lang_str).and_then(|(language, queries)| {
+                    let checker = Checker { language, rules: queries };
+                    match checker.check(&blob.bytes()) {
+                        Ok(results) => Some(results),
+                        Err(e) => {
+                            println!("Error in checker.check: {}", e);
+                            None
+                        }
                     }
-                }
+                })
             })
-        });
+        } else {
+            None
+        };
+        //
         // Process matches
+        //
         let mut matches = Vec::new();
         let owned_ts_results = tree_sitter_result.map(|ts_results| {
             ts_results
@@ -350,27 +402,19 @@ impl<'a> Matcher<'a> {
                 })
                 .collect::<Vec<_>>()
         });
-        let mut previous_raw_matches: Vec<(usize, OffsetSpan)> = Vec::new();
+        let mut previous_raw_matches: FxHashMap<usize, Vec<OffsetSpan>> = FxHashMap::default();
         for &RawMatch { rule_id, start_idx, end_idx } in
             self.user_data.raw_matches_scratch.iter().rev()
         {
             let rule_id_usize: usize = rule_id as usize;
-            // let rule = &rules_db.rules[rule_id_usize];
             let rule = Arc::clone(&rules_db.rules[rule_id_usize]);
             let re = &rules_db.anchored_regexes[rule_id_usize];
             let start_idx_usize = start_idx as usize;
             let end_idx_usize = end_idx as usize;
             let current_span = OffsetSpan::from_range(start_idx_usize..end_idx_usize);
-            // Skip if fully contained in a previous match
-            if previous_raw_matches.iter().any(|(prev_id, prev_span): &(usize, OffsetSpan)| {
-                *prev_id == rule_id_usize
-                    && (prev_span.fully_contains(&current_span)
-                        || current_span.fully_contains(prev_span))
-            }) {
+            if !record_match(&mut previous_raw_matches, rule_id_usize, current_span) {
                 continue;
             }
-            let matching_input_offset_span = OffsetSpan::from_range(start_idx_usize..end_idx_usize);
-            previous_raw_matches.push((rule_id_usize, matching_input_offset_span));
             filter_match(
                 blob,
                 rule,
@@ -383,9 +427,12 @@ impl<'a> Matcher<'a> {
                 &mut seen_matches,
                 origin,
                 None,
+                false,
                 redact,
                 &filename,
                 self.profiler.as_ref(),
+                self.respect_ignore_if_contains,
+                &self.inline_ignore_config,
             );
         }
         // If tree-sitter produced base64-decoded matches, try them against all rules
@@ -405,19 +452,71 @@ impl<'a> Matcher<'a> {
                             rule_id_usize,
                             &mut seen_matches,
                             origin,
-                            Some(ts_match.clone()),
+                            Some(ts_match.as_bytes()),
+                            *is_base64_decoded,
                             redact,
                             &filename,
                             self.profiler.as_ref(),
+                            self.respect_ignore_if_contains,
+                            &self.inline_ignore_config,
                         );
                     }
                 }
             }
         }
+
+        if !no_base64 {
+            // If the blob contains standalone Base64 blobs, decode and scan them as well
+            const MAX_B64_DEPTH: usize = 2; // decode at most two levels deep
+            let mut b64_stack: Vec<(DecodedData, usize)> =
+                b64_items.drain(..).map(|d| (d, 0)).collect();
+            while let Some((item, depth)) = b64_stack.pop() {
+                for (rule_id_usize, rule) in rules_db.rules.iter().enumerate() {
+                    let re = &rules_db.anchored_regexes[rule_id_usize];
+                    filter_match(
+                        blob,
+                        rule.clone(),
+                        re,
+                        item.pos_start,
+                        item.pos_end,
+                        &mut matches,
+                        &mut previous_matches,
+                        rule_id_usize,
+                        &mut seen_matches,
+                        origin,
+                        Some(item.decoded.as_slice()),
+                        true,
+                        redact,
+                        &filename,
+                        self.profiler.as_ref(),
+                        self.respect_ignore_if_contains,
+                        &self.inline_ignore_config,
+                    );
+                }
+                if depth + 1 < MAX_B64_DEPTH {
+                    for nested in get_base64_strings(item.decoded.as_slice()) {
+                        b64_stack.push((
+                            DecodedData {
+                                decoded: nested.decoded,
+                                pos_start: item.pos_start,
+                                pos_end: item.pos_end,
+                            },
+                            depth + 1,
+                        ));
+                    }
+                }
+            }
+        }
         // Finalize
-        // Only record in seen_blobs if deduplication is enabled
-        if !no_dedup {
-            self.seen_blobs.insert(blob.id, !matches.is_empty());
+        if !no_dedup && !matches.is_empty() {
+            let blob_id = blob.id();
+            if let Some(had_matches) = self.seen_blobs.insert(blob_id, true) {
+                return Ok(if had_matches {
+                    ScanResult::SeenWithMatches
+                } else {
+                    ScanResult::SeenSansMatches
+                });
+            }
         }
 
         // --- opportunistic capacity cap ---------------------------------
@@ -444,53 +543,214 @@ fn compute_match_key(content: &[u8], rule_id: &[u8], start: usize, end: usize) -
     end.hash(&mut hasher);
     hasher.finish()
 }
+
+#[inline]
+fn insert_span(spans: &mut Vec<OffsetSpan>, span: OffsetSpan) -> bool {
+    let mut idx = spans.binary_search_by(|s| s.start.cmp(&span.start)).unwrap_or_else(|i| i);
+    if idx > 0 {
+        if spans[idx - 1].fully_contains(&span) {
+            return false;
+        }
+        if span.fully_contains(&spans[idx - 1]) {
+            spans.remove(idx - 1);
+            idx -= 1;
+        }
+    }
+    if idx < spans.len() {
+        if spans[idx].fully_contains(&span) {
+            return false;
+        }
+        if span.fully_contains(&spans[idx]) {
+            spans.remove(idx);
+        }
+    }
+    spans.insert(idx, span);
+    true
+}
+
+#[inline]
+fn record_match(
+    map: &mut FxHashMap<usize, Vec<OffsetSpan>>,
+    rule_id: usize,
+    span: OffsetSpan,
+) -> bool {
+    insert_span(map.entry(rule_id).or_default(), span)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn filter_match<'b>(
     blob: &'b Blob,
-    // rule: &'b Rule,
     rule: Arc<Rule>,
     re: &Regex,
     start: usize,
     end: usize,
     matches: &mut Vec<BlobMatch<'b>>,
-    previous_matches: &mut Vec<(usize, OffsetSpan)>,
+    previous_matches: &mut FxHashMap<usize, Vec<OffsetSpan>>,
     rule_id: usize,
     seen_matches: &mut FxHashSet<u64>,
     _origin: &OriginSet,
-    ts_match: Option<String>,
-    redact: bool,
+    ts_match: Option<&[u8]>,
+    is_base64: bool,
+    _redact: bool,
     filename: &str,
     profiler: Option<&Arc<ConcurrentRuleProfiler>>,
+    respect_ignore_if_contains: bool,
+    inline_ignore_config: &InlineIgnoreConfig,
 ) {
     let mut timer =
         profiler.map(|p| RuleTimer::new(p, rule.id(), rule.name(), &rule.syntax.pattern, filename));
 
     let initial_len = matches.len();
 
-    // Use Cow to avoid unnecessary copying when ts_match is None
-    let byte_slice: Cow<[u8]> = match ts_match {
-        Some(ts_match_value) => Cow::Owned(ts_match_value.into_bytes()),
-        None => Cow::Borrowed(&blob.bytes()[start..end]),
-    };
-    for captures in re.captures_iter(byte_slice.as_ref()) {
-        let matching_input = captures.get(1).or_else(|| captures.get(0)).unwrap();
-        // let str_input = std::str::from_utf8(matching_input.as_bytes()).unwrap_or("");
-        // let calculated_entropy = calculate_shannon_entropy(str_input);
-        // if calculated_entropy <= rule.min_entropy() || is_safe_match(str_input) {
-        //     continue;
-        // }
+    let blob_bytes = blob.bytes();
+    let default_slice = &blob_bytes[start..end];
+    let haystack = ts_match.unwrap_or(default_slice);
+
+    for captures in re.captures_iter(haystack) {
+        let full_capture = captures.get(0).unwrap();
+
+        // --- LOGIC TO FIND THE "SECRET" FOR ENTROPY/SAFE-LISTING ---
+        let matching_input_for_entropy = 'block: {
+            // 1. Prefer a named capture called TOKEN (case-insensitive).
+            if let Some(token_cap) = re.capture_names().enumerate().find_map(|(i, name_opt)| {
+                name_opt
+                    .filter(|name| name.eq_ignore_ascii_case("TOKEN"))
+                    .and_then(|_| captures.get(i))
+            }) {
+                break 'block token_cap;
+            }
+
+            // 2. Otherwise, prefer the first *matched* named capture.
+            if let Some(named_cap) = re.capture_names().enumerate().find_map(|(i, name_opt)| {
+                name_opt.and_then(|_| captures.get(i)) // find(i > 0 && name_opt.is_some())
+            }) {
+                break 'block named_cap;
+            }
+
+            // 3. Otherwise, fall back to the first positional capture (group 1).
+            if let Some(pos_cap) = captures.get(1) {
+                break 'block pos_cap;
+            }
+
+            // 4. Finally, fall back to the full match (group 0).
+            break 'block full_capture;
+        };
+        // --- END LOGIC ---
+
         let min_entropy = rule.min_entropy();
-        let mi_bytes = matching_input.as_bytes();
-        let calculated_entropy = calculate_shannon_entropy(mi_bytes);
-        if calculated_entropy <= min_entropy || is_safe_match(mi_bytes) {
+        let entropy_bytes = matching_input_for_entropy.as_bytes();
+        let full_bytes = full_capture.as_bytes();
+        let calculated_entropy = calculate_shannon_entropy(entropy_bytes);
+
+        // Check entropy and safe-listing against the *selected* secret bytes
+        if calculated_entropy <= min_entropy
+            || is_safe_match(entropy_bytes)
+            || is_user_match(entropy_bytes, full_bytes)
+        {
             debug!(
                 "Skipping match with entropy {} <= {} or safe match",
                 calculated_entropy, min_entropy
             );
             continue;
         }
+
+        // Check character requirements if specified
+        if let Some(char_reqs) = rule.pattern_requirements() {
+            let context = PatternRequirementContext {
+                regex: re,
+                captures: &captures,
+                full_match: full_bytes,
+            };
+
+            // Decide which bytes to validate:
+            // - If there are multiple capture groups OR any named captures → use full match
+            // - Otherwise → use entropy_bytes (the actual secret)
+            let use_full_match = {
+                let has_named_captures = re.capture_names().any(|n| n.is_some());
+                let capture_count = captures.len(); // includes group 0
+                has_named_captures || capture_count > 2
+            };
+
+            let validation_bytes = if use_full_match { full_bytes } else { entropy_bytes };
+
+            match char_reqs.validate(validation_bytes, Some(context), respect_ignore_if_contains) {
+                //
+                // --- END FIX ---
+                PatternValidationResult::Passed => {}
+                PatternValidationResult::Failed => {
+                    debug!(
+                        "Skipping match that does not meet character requirements for rule {}",
+                        rule.id()
+                    );
+                    continue;
+                }
+                PatternValidationResult::FailedChecksum { actual_len, expected_len } => {
+                    debug!(
+                        "Skipping match for rule {} due to checksum mismatch (actual_len={}, expected_len={})",
+                        rule.id(),
+                        actual_len,
+                        expected_len
+                    );
+                    continue;
+                }
+                PatternValidationResult::IgnoredBySubstring { matched_term } => {
+                    debug!(
+                        "Skipping match for rule {} because it contains ignored term {matched_term}",
+                        rule.id()
+                    );
+                    continue;
+                }
+            }
+        }
+
+        // Use the `matching_input_for_entropy` as the span/key for the finding.
+        let matching_input = matching_input_for_entropy;
+
         let matching_input_offset_span = OffsetSpan::from_range(
             (start + matching_input.start())..(start + matching_input.end()),
         );
+        if inline_ignore_config.should_ignore(blob_bytes, &matching_input_offset_span) {
+            debug!("Skipping match due to inline ignore directive");
+            continue;
+        }
+        if let Some(validation) = rule.syntax.validation.as_ref() {
+            match validation {
+                Validation::MongoDB => {
+                    let Ok(uri) = std::str::from_utf8(matching_input.as_bytes()) else {
+                        debug!("Skipping match for rule {} due to non-UTF8 MongoDB URI", rule.id());
+                        continue;
+                    };
+                    if !is_parseable_mongodb_uri(uri) {
+                        debug!("Skipping match for rule {} due to invalid MongoDB URI", rule.id());
+                        continue;
+                    }
+                }
+                Validation::Postgres => {
+                    let Ok(uri) = std::str::from_utf8(matching_input.as_bytes()) else {
+                        debug!(
+                            "Skipping match for rule {} due to non-UTF8 Postgres URI",
+                            rule.id()
+                        );
+                        continue;
+                    };
+                    if !is_parseable_postgres_uri(uri) {
+                        debug!("Skipping match for rule {} due to invalid Postgres URI", rule.id());
+                        continue;
+                    }
+                }
+                Validation::MySQL => {
+                    let Ok(uri) = std::str::from_utf8(matching_input.as_bytes()) else {
+                        debug!("Skipping match for rule {} due to non-UTF8 MySQL URI", rule.id());
+                        continue;
+                    };
+                    if !is_parseable_mysql_uri(uri) {
+                        debug!("Skipping match for rule {} due to invalid MySQL URI", rule.id());
+                        continue;
+                    }
+                }
+                _ => {}
+            }
+        }
         let match_key = compute_match_key(
             matching_input.as_bytes(),
             rule.id().as_bytes(),
@@ -500,35 +760,34 @@ fn filter_match<'b>(
         if !seen_matches.insert(match_key) {
             continue;
         }
-        if previous_matches.iter().any(|(prev_rule_id, prev_loc)| {
-            *prev_rule_id == rule_id
-                && (prev_loc.fully_contains(&matching_input_offset_span)
-                    || matching_input_offset_span.fully_contains(prev_loc))
-        }) {
+        if !record_match(previous_matches, rule_id, matching_input_offset_span) {
             continue;
         }
         let only_matching_input =
             &blob.bytes()[matching_input_offset_span.start..matching_input_offset_span.end];
-        let groups =
-            SerializableCaptures::from_captures(&captures, byte_slice.as_ref(), re, redact);
+
+        // Pass the *full* capture object to from_captures
+        let groups = SerializableCaptures::from_captures(&captures, haystack, re);
+
         matches.push(BlobMatch {
             rule: Arc::clone(&rule),
-            blob_id: &blob.id,
+            blob_id: blob.id_ref(),
             matching_input: only_matching_input,
             matching_input_offset_span,
             captures: groups,
-            validation_response_body: String::new(),
+            validation_response_body: None,
             validation_response_status: StatusCode::from_u16(0).unwrap_or(StatusCode::CONTINUE),
             validation_success: false,
             calculated_entropy,
+            is_base64,
         });
-        previous_matches.push((rule_id, matching_input_offset_span));
     }
     if let Some(t) = timer.take() {
         let new_count = (matches.len() - initial_len) as u64;
         t.end(new_count > 0, new_count, 0);
     }
 }
+
 fn get_language_and_queries(lang: &str) -> Option<(Language, FxHashMap<String, String>)> {
     match lang.to_lowercase().as_str() {
         "bash" | "shell" => Some((Language::Bash, parser::queries::bash::get_bash_queries())),
@@ -623,63 +882,98 @@ impl JsonSchema for Groups {
 //     pub end: usize,    // End position of the match
 //     pub value: String, // The actual captured value
 // }
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, JsonSchema)]
 pub struct SerializableCapture {
-    pub name: Option<String>,
+    pub name: Option<&'static str>,
     pub match_number: i32,
     pub start: usize,
     pub end: usize,
-    // Instead of storing an owned String, store a borrowed or interned value.
-    // Here we use Cow to allow either borrowing or owning as needed.
-    pub value: std::borrow::Cow<'static, str>,
+    /// Interned original (unredacted) value.
+    #[serde(skip_serializing, skip_deserializing)]
+    pub value: &'static str,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct SerializableCaptures {
-    pub captures: Vec<SerializableCapture>, // All captures (named and unnamed)
+impl SerializableCapture {
+    /// Returns the original captured value.
+    pub fn raw_value(&self) -> &'static str {
+        self.value
+    }
+
+    /// Returns the value that should be shown in user-facing output.
+    pub fn display_value(&self) -> std::borrow::Cow<'static, str> {
+        crate::util::display_value(self.value)
+    }
 }
+
+impl serde::Serialize for SerializableCapture {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+
+        let mut state = serializer.serialize_struct("SerializableCapture", 5)?;
+        state.serialize_field("name", &self.name)?;
+        state.serialize_field("match_number", &self.match_number)?;
+        state.serialize_field("start", &self.start)?;
+        state.serialize_field("end", &self.end)?;
+        let value = self.display_value();
+        state.serialize_field("value", &value)?;
+        state.end()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct SerializableCaptures {
+    #[schemars(with = "Vec<SerializableCapture>")]
+    pub captures: SmallVec<[SerializableCapture; 2]>, // All captures (named and unnamed)
+}
+
 impl SerializableCaptures {
-    pub fn from_captures(
-        captures: &regex::bytes::Captures,
-        _input: &[u8],
-        re: &Regex,
-        redact: bool,
-    ) -> Self {
-        let mut serialized_captures = Vec::new();
-        // Process named captures
-        for name in re.capture_names().flatten() {
-            if let Some(capture) = captures.name(name) {
-                let value = if redact {
-                    redact_value(&String::from_utf8_lossy(capture.as_bytes()))
-                } else {
-                    String::from_utf8_lossy(capture.as_bytes()).to_string()
-                };
+    pub fn from_captures(captures: &regex::bytes::Captures, _input: &[u8], re: &Regex) -> Self {
+        let mut serialized_captures: SmallVec<[SerializableCapture; 2]> = SmallVec::new();
+
+        let capture_names: SmallVec<[Option<&'static str>; 4]> =
+            re.capture_names().map(|name| name.map(intern)).collect();
+
+        // If there are explicit capture groups (e.g., group 1, 2, ...),
+        // only serialize those.
+        if captures.len() > 1 {
+            for i in 1..captures.len() {
+                // Start from 1
+                if let Some(cap) = captures.get(i) {
+                    let raw_value = String::from_utf8_lossy(cap.as_bytes());
+                    let raw_interned = intern(raw_value.as_ref());
+                    let name = capture_names.get(i).and_then(|opt| *opt);
+
+                    serialized_captures.push(SerializableCapture {
+                        name,
+                        match_number: i32::try_from(i).unwrap_or(0),
+                        start: cap.start(),
+                        end: cap.end(),
+                        value: raw_interned,
+                    });
+                }
+            }
+        } else if captures.len() == 1 {
+            // ELSE, if there is ONLY the full match (len == 1),
+            // serialize just that full match (group 0) as the fallback.
+            if let Some(cap) = captures.get(0) {
+                let raw_value = String::from_utf8_lossy(cap.as_bytes());
+                let raw_interned = intern(raw_value.as_ref());
+                let name = capture_names.get(0).and_then(|opt| *opt);
+
                 serialized_captures.push(SerializableCapture {
-                    name: Some(name.to_string()),
-                    match_number: -1,
-                    start: capture.start(),
-                    end: capture.end(),
-                    value: value.into(),
+                    name,
+                    match_number: 0,
+                    start: cap.start(),
+                    end: cap.end(),
+                    value: raw_interned,
                 });
             }
         }
-        // Process unnamed captures (numbered groups)
-        for i in 0..captures.len() {
-            if let Some(capture) = captures.get(i) {
-                let value = if redact {
-                    redact_value(&String::from_utf8_lossy(capture.as_bytes()))
-                } else {
-                    String::from_utf8_lossy(capture.as_bytes()).to_string()
-                };
-                serialized_captures.push(SerializableCapture {
-                    name: None,
-                    match_number: i32::try_from(i).unwrap_or(0),
-                    start: capture.start(),
-                    end: capture.end(),
-                    value: value.into(),
-                });
-            }
-        }
+        // If len == 0 (no match), loop is skipped, empty vec is returned.
+
         SerializableCaptures { captures: serialized_captures }
     }
 }
@@ -688,14 +982,10 @@ impl SerializableCaptures {
 // -------------------------------------------------------------------------------------------------
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct Match {
-    /// The blob this match comes from
-    // pub blob_id: BlobId,
-
     /// The location of the entire matching content
     pub location: Location,
 
     /// The capture groups
-    // pub groups: Groups,
     pub groups: SerializableCaptures, // Store serialized captures
 
     /// unique identifier of file / blob where this match was found
@@ -705,19 +995,18 @@ pub struct Match {
     pub finding_fingerprint: u64,
 
     /// The rule that produced this match
-    pub rule_finding_fingerprint: &'static str,
-
-    /// The text identifier of the rule that produced this match
-    pub rule_text_id: &'static str,
-
-    /// The name of the rule that produced this match
-    pub rule_name: &'static str,
-
-    /// The confidence property of the rule that produced this match
-    pub rule_confidence: crate::rules::rule::Confidence,
+    #[serde(skip_serializing)]
+    #[schemars(skip)]
+    pub rule: Arc<Rule>,
 
     /// Validation Body
-    pub validation_response_body: String,
+    #[serde(
+        default,
+        serialize_with = "validation_body::serialize",
+        deserialize_with = "validation_body::deserialize"
+    )]
+    #[schemars(schema_with = "validation_body::schema")]
+    pub validation_response_body: ValidationResponseBody,
 
     /// Validation Status Code
     pub validation_response_status: u16,
@@ -729,31 +1018,35 @@ pub struct Match {
     pub calculated_entropy: f32,
 
     pub visible: bool,
+    #[serde(default)]
+    pub is_base64: bool,
 }
 impl Match {
     #[inline]
     pub fn convert_owned_blobmatch_to_match<'a>(
-        loc_mapping: &'a LocationMapping,
+        loc_mapping: Option<&'a LocationMapping<'a>>,
         owned_blob_match: &'a OwnedBlobMatch,
         origin_type: &'a str,
     ) -> Self {
         let offset_span = owned_blob_match.matching_input_offset_span;
-        // Extract the matched secret content. Use capture group 1 if it exists, otherwise fall back
-        // to group 0.
+        // EXTERNAL FINGERPRINT: Use get(1).or_else(get(0)) for backward compatibility.
+        // See comment in from_blob_match() for why this differs from validation_dedup_key().
         let matching_finding_bytes = owned_blob_match
             .captures
             .captures
             .get(1)
             .or_else(|| owned_blob_match.captures.captures.get(0))
-            .map(|capture| capture.value.as_bytes())
+            .map(|capture| capture.raw_value().as_bytes())
             .unwrap_or_default();
 
         // The fingerprint will be based on the content of the secret.
         let finding_value_for_fp = std::str::from_utf8(matching_finding_bytes).unwrap_or("");
 
-        let source_span = loc_mapping.get_source_span(&offset_span);
-        let rule_finding_fingerprint = owned_blob_match.rule.finding_sha1_fingerprint().to_owned();
-
+        let source_span =
+            loc_mapping.map(|lm| lm.get_source_span(&offset_span)).unwrap_or(SourceSpan {
+                start: SourcePoint { line: 0, column: 0 },
+                end: SourcePoint { line: 0, column: 0 },
+            });
         let offset_start: u64 =
             owned_blob_match.matching_input_offset_span.start.try_into().unwrap();
         let offset_end: u64 = owned_blob_match.matching_input_offset_span.end.try_into().unwrap();
@@ -767,12 +1060,9 @@ impl Match {
 
         // matching_snippet
         Match {
-            rule_finding_fingerprint: intern(&rule_finding_fingerprint),
-            rule_name: intern(owned_blob_match.rule.name()),
-            rule_confidence: owned_blob_match.rule.confidence(),
-            rule_text_id: intern(owned_blob_match.rule.id()),
+            rule: owned_blob_match.rule.clone(),
             visible: owned_blob_match.rule.visible().to_owned(),
-            location: Location { offset_span, source_span: source_span.clone() },
+            location: Location::with_source_span(offset_span, Some(source_span.clone())),
             groups: owned_blob_match.captures.clone(),
             blob_id: owned_blob_match.blob_id,
             finding_fingerprint,
@@ -780,6 +1070,7 @@ impl Match {
             validation_response_status: owned_blob_match.validation_response_status.as_u16(),
             validation_success: owned_blob_match.validation_success,
             calculated_entropy: owned_blob_match.calculated_entropy,
+            is_base64: owned_blob_match.is_base64,
         }
     }
 
@@ -789,34 +1080,12 @@ impl Match {
     }
 
     pub fn finding_id(&self) -> String {
-        let mut h = Sha1::new();
-        write!(&mut h, "{}\0", self.rule_finding_fingerprint)
-            .expect("should be able to write to memory");
-        serde_json::to_writer(&mut h, &self.groups)
+        let mut buffer = Vec::with_capacity(128);
+        buffer.extend_from_slice(self.rule.finding_sha1_fingerprint().as_bytes());
+        buffer.push(0);
+        serde_json::to_writer(&mut buffer, &self.groups)
             .expect("should be able to serialize groups as JSON");
-        let hash: sha2::digest::generic_array::GenericArray<
-            u8,
-            sha2::digest::typenum::UInt<
-                sha2::digest::typenum::UInt<
-                    sha2::digest::typenum::UInt<
-                        sha2::digest::typenum::UInt<
-                            sha2::digest::typenum::UInt<
-                                sha2::digest::typenum::UTerm,
-                                sha2::digest::consts::B1,
-                            >,
-                            sha2::digest::consts::B0,
-                        >,
-                        sha2::digest::consts::B1,
-                    >,
-                    sha2::digest::consts::B0,
-                >,
-                sha2::digest::consts::B0,
-            >,
-        > = h.finalize();
-        // Take the first 8 bytes of the hash
-        let mut num = u64::from_be_bytes([
-            hash[0], hash[1], hash[2], hash[3], hash[4], hash[5], hash[6], hash[7],
-        ]);
+        let mut num = xxh3_64(&buffer);
         // Ensure the number is positive and within i64 range
         num &= 0x7FFF_FFFF_FFFF_FFFF; // Clear the sign bit to make it positive
                                       // Convert to string
@@ -825,45 +1094,53 @@ impl Match {
 }
 #[derive(Debug, Clone)]
 pub struct DecodedData {
-    pub original: String,
-    pub decoded: String,
+    pub decoded: Vec<u8>,
     pub pos_start: usize,
     pub pos_end: usize,
 }
+#[inline]
+fn is_base64_byte(b: u8) -> bool {
+    // Accepts both standard base64 ('+', '/') and URL-safe base64 ('-', '_') characters.
+    matches!(b, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'+' | b'/' | b'-' | b'_')
+}
+
 pub fn get_base64_strings(input: &[u8]) -> Vec<DecodedData> {
-    lazy_static! {
-        static ref RE_BASE64: Regex =
-            Regex::new(r"(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?").unwrap();
-    }
     let mut results = Vec::new();
-    for capture in RE_BASE64.captures_iter(input) {
-        let base64_match = capture.get(0).unwrap();
-
-        if base64_match.is_empty() {
-            continue;
+    let mut i = 0;
+    while i < input.len() {
+        while i < input.len() && !is_base64_byte(input[i]) {
+            i += 1;
+        }
+        let start = i;
+        while i < input.len() && is_base64_byte(input[i]) {
+            i += 1;
         }
 
-        let start = base64_match.start();
-        let end = base64_match.end();
-        let base64_string = &input[start..end];
-        // Check if the length is a multiple of 4
-        if base64_string.len() % 4 != 0 {
-            continue;
+        let mut eq_count = 0;
+        while i < input.len() && input[i] == b'=' && eq_count < 2 {
+            i += 1;
+            eq_count += 1;
         }
-        if let Ok(decoded) = general_purpose::STANDARD.decode(base64_string) {
-            // Check if the decoded string is valid UTF-8
-            if let Ok(decoded_str) = std::str::from_utf8(&decoded) {
-                if decoded_str.is_ascii() {
-                    results.push(DecodedData {
-                        original: String::from_utf8_lossy(base64_string).into_owned(),
-                        decoded: decoded_str.to_string(),
-                        pos_start: start,
-                        pos_end: end,
-                    });
+        let end = i;
+
+        let len = end - start;
+        if len >= 32 && len % 4 == 0 {
+            let base64_slice = &input[start..end];
+
+            // Try decoding with STANDARD, then URL_SAFE, then URL_SAFE_NO_PAD
+            let decode_result = general_purpose::STANDARD
+                .decode(base64_slice)
+                .or_else(|_| general_purpose::URL_SAFE.decode(base64_slice))
+                .or_else(|_| general_purpose::URL_SAFE_NO_PAD.decode(base64_slice));
+
+            if let Ok(decoded) = decode_result {
+                if decoded.is_ascii() {
+                    results.push(DecodedData { decoded, pos_start: start, pos_end: end });
                 }
             }
         }
     }
+
     results
 }
 
@@ -890,7 +1167,7 @@ pub fn compute_finding_fingerprint(
 // -------------------------------------------------------------------------------------------------
 #[cfg(test)]
 mod test {
-    use std::collections::BTreeMap;
+    use std::{collections::BTreeMap, path::PathBuf};
 
     use pretty_assertions::assert_eq;
     // ---------------------------------------------------------------------
@@ -899,7 +1176,13 @@ mod test {
     use proptest::prelude::*;
 
     use super::*;
-    use crate::rules::rule::{DependsOnRule, HttpRequest, HttpValidation, RuleSyntax, Validation};
+    use crate::{
+        blob::{Blob, BlobIdMap},
+        origin::{Origin, OriginSet},
+        rules::rule::{
+            DependsOnRule, HttpRequest, HttpValidation, PatternRequirements, RuleSyntax, Validation,
+        },
+    };
 
     proptest! {
         #[test]
@@ -930,16 +1213,27 @@ mod test {
                 visible: true,
                 examples: vec![],
                 negative_examples: vec![],
-                prevalidated: false,
                 references: vec![],
                 validation: None::<Validation>,          // no HTTP validation needed
                 depends_on_rule: vec![],
+                pattern_requirements: None,
             });
 
             let rules_db  = RulesDatabase::from_rules(vec![rule]).unwrap();
             let seen      = BlobIdMap::new();
             let scanner_pool = Arc::new(ScannerPool::new(Arc::new(rules_db.vsdb.clone())));
-            let mut m     = Matcher::new(&rules_db, scanner_pool, &seen, None, false, None).unwrap();
+            let mut m     = Matcher::new(
+                &rules_db,
+                scanner_pool,
+                &seen,
+                None,
+                false,
+                None,
+                &[],
+                false,
+                true,
+            )
+            .unwrap();
 
             // ── run the scan ──────────────────────────────────────────────
             m.scan_bytes_raw(&noise, "buf").unwrap();
@@ -972,7 +1266,6 @@ mod test {
             visible: true,
             examples: vec![],
             negative_examples: vec![],
-            prevalidated: false,
             references: vec![],
             validation: Some(Validation::Http(HttpValidation {
                 request: HttpRequest {
@@ -996,6 +1289,7 @@ mod test {
                     variable: "domain".to_string(),
                 }),
             ],
+            pattern_requirements: None,
         })];
         let rules_db = RulesDatabase::from_rules(rules)?;
         let input = "some test data for vectorscan";
@@ -1011,12 +1305,140 @@ mod test {
             None,
             enable_rule_profiling,
             None, // Pass the shared profiler
+            &[],
+            false,
+            true,
         )?;
         matcher.scan_bytes_raw(input.as_bytes(), "fname")?;
         assert_eq!(
             matcher.user_data.raw_matches_scratch,
             vec![RawMatch { rule_id: 0, start_idx: 0, end_idx: 9 },]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_pattern_requirements_ignore_if_contains_filters_matches() -> Result<()> {
+        let rules = vec![Rule::new(RuleSyntax {
+            id: "test.exclude".to_string(),
+            name: "exclude words".to_string(),
+            pattern: "(?P<token>prefix[A-Za-z]+)".to_string(),
+            confidence: crate::rules::rule::Confidence::Medium,
+            min_entropy: 0.0,
+            visible: true,
+            examples: vec![],
+            negative_examples: vec![],
+            references: vec![],
+            validation: None,
+            depends_on_rule: vec![],
+            pattern_requirements: Some(PatternRequirements {
+                min_digits: None,
+                min_uppercase: None,
+                min_lowercase: None,
+                min_special_chars: None,
+                special_chars: None,
+                ignore_if_contains: Some(vec!["TEST".to_string()]),
+                checksum: None,
+            }),
+        })];
+
+        let rules_db = RulesDatabase::from_rules(rules)?;
+        let input = b"prefixgood prefixtest";
+        let seen_blobs: BlobIdMap<bool> = BlobIdMap::new();
+        let scanner_pool = Arc::new(ScannerPool::new(Arc::new(rules_db.vsdb.clone())));
+        let mut matcher = Matcher::new(
+            &rules_db,
+            scanner_pool,
+            &seen_blobs,
+            None,
+            false,
+            None,
+            &[],
+            false,
+            true,
+        )?;
+
+        let blob = Blob::from_bytes(input.to_vec());
+        let origin = OriginSet::from(Origin::from_file(PathBuf::from("exclude.txt")));
+
+        let matches = match matcher.scan_blob(&blob, &origin, None, false, false, false)? {
+            ScanResult::New(matches) => matches,
+            ScanResult::SeenWithMatches => {
+                panic!("unexpected scan result: blob should not be considered previously seen with matches")
+            }
+            ScanResult::SeenSansMatches => {
+                panic!("unexpected scan result: blob should not be considered previously seen without matches")
+            }
+        };
+
+        assert_eq!(matches.len(), 1, "ignore_if_contains should drop filtered matches");
+        assert_eq!(
+            matches[0].matching_input, b"prefixgood",
+            "remaining match should be the non-excluded token",
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_pattern_requirements_ignore_if_contains_can_be_disabled_in_matcher() -> Result<()> {
+        let rules = vec![Rule::new(RuleSyntax {
+            id: "test.exclude".to_string(),
+            name: "exclude words".to_string(),
+            pattern: "(?P<token>prefix[A-Za-z]+)".to_string(),
+            confidence: crate::rules::rule::Confidence::Medium,
+            min_entropy: 0.0,
+            visible: true,
+            examples: vec![],
+            negative_examples: vec![],
+            references: vec![],
+            validation: None,
+            depends_on_rule: vec![],
+            pattern_requirements: Some(PatternRequirements {
+                min_digits: None,
+                min_uppercase: None,
+                min_lowercase: None,
+                min_special_chars: None,
+                special_chars: None,
+                ignore_if_contains: Some(vec!["TEST".to_string()]),
+                checksum: None,
+            }),
+        })];
+
+        let rules_db = RulesDatabase::from_rules(rules)?;
+        let input = b"prefixgood prefixtest";
+        let seen_blobs: BlobIdMap<bool> = BlobIdMap::new();
+        let scanner_pool = Arc::new(ScannerPool::new(Arc::new(rules_db.vsdb.clone())));
+        let mut matcher = Matcher::new(
+            &rules_db,
+            scanner_pool,
+            &seen_blobs,
+            None,
+            false,
+            None,
+            &[],
+            false,
+            false,
+        )?;
+
+        let blob = Blob::from_bytes(input.to_vec());
+        let origin = OriginSet::from(Origin::from_file(PathBuf::from("exclude-disabled.txt")));
+
+        let matches = match matcher.scan_blob(&blob, &origin, None, false, false, false)? {
+            ScanResult::New(matches) => matches,
+            ScanResult::SeenWithMatches => {
+                panic!(
+                    "unexpected scan result: blob should not be considered previously seen with matches"
+                )
+            }
+            ScanResult::SeenSansMatches => {
+                panic!(
+                    "unexpected scan result: blob should not be considered previously seen without matches"
+                )
+            }
+        };
+
+        assert_eq!(matches.len(), 2, "disabling ignore_if_contains should keep all matches");
         Ok(())
     }
 
@@ -1028,14 +1450,17 @@ mod test {
     /// and report correct byte-offsets.
     #[test]
     fn test_get_base64_strings_basic() {
-        let raw = b"foo SGVsbG8gV29ybGQ= bar"; // "Hello World"
-        let hits = get_base64_strings(raw);
+        let base64_payload = b"MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=";
+        let mut raw = b"foo ".to_vec();
+        raw.extend_from_slice(base64_payload);
+        raw.extend_from_slice(b" bar");
+        // decodes to "0123456789abcdef0123456789abcdef"
+        let hits = get_base64_strings(&raw);
         assert_eq!(hits.len(), 1);
         let item = &hits[0];
-        assert_eq!(item.decoded, "Hello World");
-        assert_eq!(item.original, "SGVsbG8gV29ybGQ=");
+        assert_eq!(std::str::from_utf8(&item.decoded).unwrap(), "0123456789abcdef0123456789abcdef");
         // "foo␠" is 4 bytes, so the start offset is 4
-        assert_eq!((item.pos_start, item.pos_end), (4, 4 + item.original.len()));
+        assert_eq!((item.pos_start, item.pos_end), (4, 4 + base64_payload.len()));
     }
 
     /// `compute_finding_fingerprint` must be stable (same input ⇒ same output)
@@ -1089,16 +1514,17 @@ mod test {
             visible: true,
             examples: vec![],
             negative_examples: vec![],
-            prevalidated: false,
             references: vec![],
             validation: None::<Validation>,
             depends_on_rule: vec![],
+            pattern_requirements: None,
         });
 
         let rules_db = RulesDatabase::from_rules(vec![rule])?;
         let seen = BlobIdMap::new();
         let scanner_pool = Arc::new(ScannerPool::new(Arc::new(rules_db.vsdb.clone())));
-        let mut m = Matcher::new(&rules_db, scanner_pool, &seen, None, false, None)?;
+        let mut m =
+            Matcher::new(&rules_db, scanner_pool, &seen, None, false, None, &[], false, true)?;
 
         let buf = b"dup dup"; // two literal hits, same rule
 
@@ -1114,5 +1540,144 @@ mod test {
         assert_eq!(first_len, 2);
         assert_eq!(second_len, 2);
         Ok(())
+    }
+
+    #[test]
+    fn inline_comment_skips_match() -> Result<()> {
+        let rule = Rule::new(RuleSyntax {
+            id: "inline.ignore".into(),
+            name: "inline".into(),
+            pattern: "secret_token".into(),
+            confidence: crate::rules::rule::Confidence::Low,
+            min_entropy: 0.0,
+            visible: true,
+            examples: vec![],
+            negative_examples: vec![],
+            references: vec![],
+            validation: None::<Validation>,
+            depends_on_rule: vec![],
+            pattern_requirements: None,
+        });
+        let rules_db = RulesDatabase::from_rules(vec![rule])?;
+        let seen = BlobIdMap::new();
+        let scanner_pool = Arc::new(ScannerPool::new(Arc::new(rules_db.vsdb.clone())));
+        let mut matcher =
+            Matcher::new(&rules_db, scanner_pool, &seen, None, false, None, &[], false, true)?;
+
+        let blob = Blob::from_bytes(b"let key = \"secret_token\" # kingfisher:ignore".to_vec());
+        let origin = OriginSet::from(Origin::from_file(PathBuf::from("inline.txt")));
+
+        match matcher.scan_blob(&blob, &origin, None, false, false, false)? {
+            ScanResult::New(matches) => assert!(matches.is_empty()),
+            _ => panic!("unexpected scan result"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn inline_comment_after_multiline_secret_skips_match() -> Result<()> {
+        let rule = Rule::new(RuleSyntax {
+            id: "inline.multiline".into(),
+            name: "inline multiline".into(),
+            pattern: "line1\\s+line2".into(),
+            confidence: crate::rules::rule::Confidence::Low,
+            min_entropy: 0.0,
+            visible: true,
+            examples: vec![],
+            negative_examples: vec![],
+            references: vec![],
+            validation: None::<Validation>,
+            depends_on_rule: vec![],
+            pattern_requirements: None,
+        });
+        let rules_db = RulesDatabase::from_rules(vec![rule])?;
+        let seen = BlobIdMap::new();
+        let scanner_pool = Arc::new(ScannerPool::new(Arc::new(rules_db.vsdb.clone())));
+        let mut matcher =
+            Matcher::new(&rules_db, scanner_pool, &seen, None, false, None, &[], false, true)?;
+
+        let blob = Blob::from_bytes(
+            br#"let data = """
+line1
+line2
+"""
+# kingfisher:ignore
+"#
+            .to_vec(),
+        );
+        let origin = OriginSet::from(Origin::from_file(PathBuf::from("multiline.txt")));
+
+        match matcher.scan_blob(&blob, &origin, None, false, false, false)? {
+            ScanResult::New(matches) => assert!(matches.is_empty()),
+            _ => panic!("unexpected scan result"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn compat_flag_controls_external_directives() -> Result<()> {
+        let rule = Rule::new(RuleSyntax {
+            id: "inline.compat".into(),
+            name: "inline compat".into(),
+            pattern: "supersecret123".into(),
+            confidence: crate::rules::rule::Confidence::Low,
+            min_entropy: 0.0,
+            visible: true,
+            examples: vec![],
+            negative_examples: vec![],
+            references: vec![],
+            validation: None::<Validation>,
+            depends_on_rule: vec![],
+            pattern_requirements: None,
+        });
+        let rules_db = RulesDatabase::from_rules(vec![rule])?;
+
+        let blob = Blob::from_bytes(b"token = \"supersecret123\" # gitleaks:allow".to_vec());
+        let origin = OriginSet::from(Origin::from_file(PathBuf::from("compat.txt")));
+
+        let seen = BlobIdMap::new();
+        let scanner_pool = Arc::new(ScannerPool::new(Arc::new(rules_db.vsdb.clone())));
+        let mut matcher =
+            Matcher::new(&rules_db, scanner_pool, &seen, None, false, None, &[], false, true)?;
+        let matches_without_compat =
+            match matcher.scan_blob(&blob, &origin, None, false, false, false)? {
+                ScanResult::New(matches) => matches.len(),
+                _ => panic!("unexpected scan result"),
+            };
+        assert_eq!(matches_without_compat, 1, "directive should be ignored without compat flag");
+
+        let seen = BlobIdMap::new();
+        let scanner_pool = Arc::new(ScannerPool::new(Arc::new(rules_db.vsdb.clone())));
+        let extra = vec![String::from("gitleaks:allow")];
+        let mut matcher =
+            Matcher::new(&rules_db, scanner_pool, &seen, None, false, None, &extra, false, true)?;
+        match matcher.scan_blob(&blob, &origin, None, false, false, false)? {
+            ScanResult::New(matches) => assert!(matches.is_empty()),
+            _ => panic!("unexpected scan result"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn serializes_captures_in_numeric_order() {
+        let re =
+            Regex::new(r"(?xi)\b(ghp_(?P<body>[A-Z0-9]{3})(?P<checksum>[A-Z0-9]{2}))").unwrap();
+        let caps = re.captures(b"ghp_ABC12").expect("expected captures");
+
+        let serialized = SerializableCaptures::from_captures(&caps, b"", &re);
+        let entries: Vec<(Option<&str>, i32, &str)> = serialized
+            .captures
+            .iter()
+            .map(|cap| (cap.name.as_deref(), cap.match_number, cap.value))
+            .collect();
+
+        assert_eq!(entries.len(), 3);
+
+        assert_eq!(entries[0], (None, 1, "ghp_ABC12"));
+        assert_eq!(entries[1], (Some("body"), 2, "ABC"));
+        assert_eq!(entries[2], (Some("checksum"), 3, "12"));
     }
 }
