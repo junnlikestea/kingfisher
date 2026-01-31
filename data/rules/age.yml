@@ -44,7 +44,7 @@ rules:
   - name: Age Recipient (MLKEM768-X25519 public key)
     id: kingfisher.age.3
     pattern: |
-      (?xi)
+      (?x)
       \b
       (
         age1pq1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{1952}
