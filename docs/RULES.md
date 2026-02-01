@@ -1,5 +1,7 @@
 # Writing Custom Rules for Kingfisher
 
+[← Back to README](../README.md)
+
 A _rule_ in Kingfisher is a YAML document that describes how to detect and (optionally) validate or revoke secrets in your codebase. With custom rules you can:
 
 - **Extend** Kingfisher without touching Rust code  

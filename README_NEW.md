@@ -35,13 +35,12 @@ Designed for offensive security engineers and blue-teamers alike, Kingfisher hel
 ### Performance, Accuracy, and Hundreds of Rules
 - **Performance**: multithreaded, Hyperscan‑powered scanning built for huge codebases  
 - **Extensible rules**: hundreds of built-in detectors plus YAML-defined custom rules ([docs/RULES.md](/docs/RULES.md))  
-- **Validate & Revoke**: live validation of discovered secrets, plus direct revocation for supported platforms (GitHub, GitLab, Slack, AWS, GCP, and more)
 - **Blast Radius Mapping**: instantly map leaked keys to their effective cloud identities and exposed resources with `--access-map`. Supports AWS, GCP, Azure, GitHub, Gitlab, and more token support coming.
 - **Broad AI SaaS coverage**: finds and validates tokens for OpenAI, Anthropic, Google Gemini, Cohere, AWS Bedrock, Voyage AI, Mistral, Stability AI, Replicate, xAI (Grok), Ollama, Langchain, Perplexity, Weights & Biases, Cerebras, Friendli, Fireworks.ai, NVIDIA NIM, Together.ai, Zhipu, and many more
 - **Compressed Files**: Supports extracting and scanning compressed files for secrets
 - **Baseline management**: generate and track baselines to suppress known secrets ([docs/BASELINE.md](/docs/BASELINE.md))
 - **Checksum-aware detection**: verifies tokens with built-in checksums (e.g., GitHub, Confluent, Zuplo) — no API calls required
-- **Built-in Report Viewer**: Visualize and triage findings locally with `kingfisher view ./report-file.json`
+- **Built-in Report Viewer**: Visualize and triage findings locally with `kingisher view ./report-file.json`
 - **Library crates**: Embed Kingfisher's scanning engine in your own Rust applications ([docs/LIBRARY.md](docs/LIBRARY.md))
 
 # Benchmark Results
@@ -89,7 +88,6 @@ kingfisher scan /path/to/scan --access-map --view-report
 - [Detection Rules](#detection-rules)
 - [Usage Examples](#usage-examples)
 - [Platform Integrations](#platform-integrations)
-  - [Environment Variables](#environment-variables)
 - [Advanced Features](#advanced-features)
 - [Documentation](#documentation)
 - [Library Usage](#library-usage)
@@ -100,132 +98,19 @@ kingfisher scan /path/to/scan --access-map --view-report
 
 ## Quick Start
 
-### 1: Install Kingfisher
-
 ```bash
-# Homebrew
+# Install via Homebrew
 brew install kingfisher
 
 # Or use the install script (Linux/macOS)
-curl -sSL https://raw.githubusercontent.com/mongodb/kingfisher/main/scripts/install-kingfisher.sh | bash
-```
+curl --silent --location \
+  https://raw.githubusercontent.com/mongodb/kingfisher/main/scripts/install-kingfisher.sh | bash
 
-### 2: Scan a directory for secrets
-
-```bash
+# Scan a directory
 kingfisher scan /path/to/code
-```
 
-### 3: Scan and view results in browser
-
-```bash
+# View results in browser
 kingfisher scan /path/to/code --view-report
-```
-
-### 4: Show only verified (live) secrets
-
-```bash
-kingfisher scan /path/to/code --only-valid
-```
-
-### 5: Revoke a discovered secret
-
-```bash
-# Revoke a GitHub token
-kingfisher revoke --rule github "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-
-# Revoke AWS credentials (sets access key to Inactive)
-kingfisher revoke --rule aws --arg "AKIAIOSFODNN7EXAMPLE" "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-```
-
-### 6: Scan a GitHub organization
-
-```bash
-KF_GITHUB_TOKEN="ghp_..." kingfisher scan github --organization my-org
-```
-
-### 7: Scan a GitLab group
-
-```bash
-KF_GITLAB_TOKEN="glpat-..." kingfisher scan gitlab --group my-group
-```
-
-### 8: Scan Azure Repos
-
-```bash
-KF_AZURE_PAT="pat" kingfisher scan azure --organization my-org
-```
-
-### 9: Scan Bitbucket workspace
-
-```bash
-KF_BITBUCKET_TOKEN="token" kingfisher scan bitbucket --workspace my-team
-```
-
-### 10: Scan Gitea organization
-
-```bash
-KF_GITEA_TOKEN="token" kingfisher scan gitea --organization my-org
-```
-
-### 11: Scan Hugging Face
-
-```bash
-KF_HUGGINGFACE_TOKEN="hf_..." kingfisher scan huggingface --organization my-org
-```
-
-### 12: Scan an S3 bucket
-
-```bash
-kingfisher scan s3 bucket-name --prefix path/
-```
-
-### 13: Scan Google Cloud Storage
-
-```bash
-kingfisher scan gcs bucket-name --prefix path/
-```
-
-### 14: Scan a Docker image
-
-```bash
-kingfisher scan docker ghcr.io/org/image:latest
-```
-
-### 15: Scan Jira issues
-
-```bash
-KF_JIRA_TOKEN="token" kingfisher scan jira --url https://jira.company.com --jql "project = SEC"
-```
-
-### 16: Scan Confluence pages
-
-```bash
-KF_CONFLUENCE_TOKEN="token" kingfisher scan confluence --url https://confluence.company.com --cql "label = secret"
-```
-
-### 17: Scan Slack messages
-
-```bash
-KF_SLACK_TOKEN="xoxp-..." kingfisher scan slack "api_key OR password"
-```
-
-### 18: Run with Docker (no install required)
-
-```bash
-docker run --rm -v "$PWD":/src ghcr.io/mongodb/kingfisher:latest scan /src
-```
-
-### 19: Output JSON results
-
-```bash
-kingfisher scan /path/to/code --format json --output findings.json
-```
-
-### 20: Map blast radius of discovered credentials
-
-```bash
-kingfisher scan /path/to/code --access-map --view-report
 ```
 
 ## Installation
@@ -371,29 +256,7 @@ kingfisher scan . \
 
 # Platform Integrations
 
-Kingfisher can scan multiple platforms and services directly:
-
-**Version Control & Code Hosting:**
-- GitHub (organizations, users, repositories)
-- GitLab (groups, users, projects)
-- Azure Repos (organizations, projects)
-- Bitbucket (workspaces, users, repositories)
-- Gitea (organizations, users, repositories)
-- Hugging Face (models, datasets, spaces)
-
-**Cloud Storage:**
-- AWS S3
-- Google Cloud Storage
-
-**Containers:**
-- Docker (images from registries)
-
-**Collaboration & Documentation:**
-- Jira (issues via JQL queries)
-- Confluence (pages via CQL queries)
-- Slack (messages via search queries)
-
-See **[docs/INTEGRATIONS.md](docs/INTEGRATIONS.md)** for complete integration documentation and authentication setup.
+Kingfisher can scan multiple platforms and services directly. See **[docs/INTEGRATIONS.md](docs/INTEGRATIONS.md)** for complete integration documentation.
 
 ## Quick Examples
 
@@ -429,40 +292,6 @@ KF_SLACK_TOKEN="xoxp-..." kingfisher scan slack "from:username has:link"
 ```
 
 **For detailed integration instructions and authentication setup, see [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).**
-
-## Environment Variables
-
-| Variable          | Purpose                      |
-| ----------------- | ---------------------------- |
-| `KF_GITHUB_TOKEN` | GitHub Personal Access Token |
-| `KF_GITLAB_TOKEN` | GitLab Personal Access Token |
-| `KF_GITEA_TOKEN` | Gitea Personal Access Token |
-| `KF_GITEA_USERNAME` | Username for private Gitea clones (used with `KF_GITEA_TOKEN`) |
-| `KF_AZURE_TOKEN` / `KF_AZURE_PAT` | Azure Repos Personal Access Token |
-| `KF_AZURE_USERNAME` | Username to use with Azure Repos PATs (defaults to `pat` when unset) |
-| `KF_BITBUCKET_TOKEN` | Bitbucket Cloud workspace API token or Bitbucket Server PAT |
-| `KF_BITBUCKET_USERNAME` | Optional Bitbucket username for legacy app passwords or server tokens |
-| `KF_BITBUCKET_APP_PASSWORD` | Legacy Bitbucket app password (deprecated September 9, 2025; disabled June 9, 2026) |
-| `KF_BITBUCKET_OAUTH_TOKEN` | Bitbucket OAuth or PAT token |
-| `KF_HUGGINGFACE_TOKEN` | Hugging Face access token for API enumeration and git cloning |
-| `KF_HUGGINGFACE_USERNAME` | Optional username for Hugging Face git operations (defaults to `hf_user`) |
-| `KF_JIRA_TOKEN`   | Jira API token               |
-| `KF_CONFLUENCE_TOKEN` | Confluence API token      |
-| `KF_SLACK_TOKEN`  | Slack API token              |
-| `KF_DOCKER_TOKEN` | Docker registry token (`user:pass` or bearer token). If unset, credentials from the Docker keychain are used |
-| `KF_AWS_KEY`, `KF_AWS_SECRET`, and `KF_AWS_SESSION_TOKEN` | AWS credentials for S3 bucket scanning. Session token is optional, for temporary credentials |
-
-Set them temporarily per command:
-
-```bash
-KF_GITLAB_TOKEN="glpat-…" kingfisher scan gitlab --group my-group
-```
-
-Or export for the session:
-
-```bash
-export KF_GITLAB_TOKEN="glpat-…"
-```
 
 # Advanced Features
 
@@ -530,9 +359,38 @@ kingfisher scan /tmp/repo --branch feature-1 \
 
 # Library Usage
 
-(**beta feature**) - Kingfisher's scanning engine is available as a set of Rust library crates (`kingfisher-core`, `kingfisher-rules`, `kingfisher-scanner`) that can be embedded into other applications. This enables you to integrate secret scanning directly into your own tools and workflows.
+Kingfisher's scanning engine is available as a set of Rust library crates that can be embedded into other applications:
 
-**For complete documentation and examples, see [docs/LIBRARY.md](docs/LIBRARY.md).**
+| Crate | Description |
+|-------|-------------|
+| `kingfisher-core` | Core types: `Blob`, `BlobId`, `Location`, `Origin`, entropy calculation |
+| `kingfisher-rules` | Rule definitions, YAML parsing, compiled rule database, 200+ builtin rules |
+| `kingfisher-scanner` | High-level scanning API with `Scanner` and `Finding` types |
+
+**Quick example:**
+
+```rust
+use std::sync::Arc;
+use kingfisher_rules::{get_builtin_rules, RulesDatabase, Rule};
+use kingfisher_scanner::Scanner;
+
+// Load builtin rules and compile
+let rules = get_builtin_rules(None)?;
+let rule_vec: Vec<Rule> = rules.iter_rules()
+    .map(|syntax| Rule::new(syntax.clone()))
+    .collect();
+let rules_db = Arc::new(RulesDatabase::from_rules(rule_vec)?);
+
+// Create scanner and scan
+let scanner = Scanner::new(rules_db);
+let findings = scanner.scan_file("config.yml")?;
+
+for finding in findings {
+    println!("{}: {}", finding.rule_name, finding.secret);
+}
+```
+
+For complete documentation, see **[docs/LIBRARY.md](docs/LIBRARY.md)**.
 
 # Exit Codes
 

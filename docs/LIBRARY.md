@@ -1,5 +1,7 @@
 # Kingfisher Library Crates
 
+[← Back to README](../README.md)
+
 Kingfisher's functionality is available as a set of Rust library crates that can be embedded into other applications. This guide covers how to use these crates for secret scanning in your own Rust projects.
 
 ## Crate Overview
