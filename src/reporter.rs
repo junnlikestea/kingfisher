@@ -628,13 +628,12 @@ impl DetailsReporter {
             .unwrap_or_else(|| format!("blob:{}", rm.blob_metadata.id.hex()));
 
         // Try to find AKID from captures (for AWS)
-        let akid_from_captures: Option<String> = rm
-            .m
-            .groups
-            .captures
-            .iter()
-            .find(|c| c.name == Some("AKID") || c.name == Some("akid"))
-            .map(|c| c.raw_value().to_string());
+        let akid_from_captures: Option<String> =
+            rm.m.groups
+                .captures
+                .iter()
+                .find(|c| c.name == Some("AKID") || c.name == Some("akid"))
+                .map(|c| c.raw_value().to_string());
 
         // Try to extract AKID from validation response body (fallback for AWS)
         let akid_from_body = extract_akid_from_validation_body(&rm.validation_response_body);
