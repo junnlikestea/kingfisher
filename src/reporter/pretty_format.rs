@@ -154,6 +154,9 @@ impl<'a> Display for PrettyFindingRecord<'a> {
         if !finding.validation.response.is_empty() {
             writeln!(f, " |__Response....: {}", style_fn(&finding.validation.response))?;
         }
+        if let Some(revoke_cmd) = &finding.revoke_command {
+            writeln!(f, " |Revoke Cmd....: {}", reporter.style_active_creds(revoke_cmd))?;
+        }
         writeln!(f, " |Language......: {}", finding.language)?;
         writeln!(f, " |Line Num......: {}", finding.line)?;
         writeln!(f, " |Path..........: {}", style_fn(&finding.path))?;
