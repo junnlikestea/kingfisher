@@ -243,6 +243,7 @@ mod tests {
             calculated_entropy: 4.5,
             visible: true,
             is_base64: false,
+            dependent_captures: std::collections::BTreeMap::new(),
         }
     }
 

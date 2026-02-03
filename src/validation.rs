@@ -403,6 +403,9 @@ async fn timed_validate_single_match<'a>(
                     span.start,
                     span.end,
                 ));
+                // Store the dependent capture for later use in reporting
+                // (e.g., generating validate/revoke commands)
+                m.dependent_captures.insert(dep.variable.to_uppercase(), val.clone());
             }
         }
     }

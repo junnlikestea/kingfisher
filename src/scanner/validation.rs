@@ -424,6 +424,9 @@ pub async fn run_secret_validation(
                             validation_success: om.validation_success,
                             validation_response_body: om.validation_response_body.clone(),
                             validation_response_status: om.validation_response_status.as_u16(),
+                            // Copy dependent_captures from validated OwnedBlobMatch
+                            // so they're available for building validate/revoke commands
+                            dependent_captures: om.dependent_captures.clone(),
                             ..orig.2.clone()
                         },
                     )));
