@@ -100,17 +100,22 @@ kingfisher scan /path/to/scan --access-map --view-report
 
 ## Quick Start
 
-### 1: Install Kingfisher
+### 1: Install Kingfisher ([INSTALLATION.md](docs/INSTALLATION.md))
 
 ```bash
-# Homebrew
+# Homebrew (Linux/macOS)
 brew install kingfisher
 
 # Or use the install script (Linux/macOS)
 curl -sSL https://raw.githubusercontent.com/mongodb/kingfisher/main/scripts/install-kingfisher.sh | bash
+
+# Or use PowerShell based install script on Windows
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/mongodb/kingfisher/main/scripts/install-kingfisher-pre-commit.ps1' -OutFile install-kingfisher-pre-commit.ps1
+./install-kingfisher-pre-commit.ps1
 ```
 
-### 2: Scan a directory for secrets
+### 2: Scan a directory for secrets ([USAGE.md](/docs/USAGE.md))
 
 ```bash
 kingfisher scan /path/to/code
@@ -138,7 +143,7 @@ kingfisher revoke --rule github "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 kingfisher revoke --rule aws --arg "AKIAIOSFODNN7EXAMPLE" "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
 ```
 
-### 6: Scan a GitHub organization
+### 6: Scan a GitHub organization ([INTEGRATIONS.md](docs/INTEGRATIONS.md))
 
 ```bash
 KF_GITHUB_TOKEN="ghp_..." kingfisher scan github --organization my-org
