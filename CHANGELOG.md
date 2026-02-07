@@ -9,7 +9,7 @@ All notable changes to this project will be documented in this file.
 - Fixed AWS access key validation to support temporary/session keys (ASIA prefix) in addition to long-lived keys (AKIA prefix).
 - Consolidated all validator implementations into the `kingfisher-scanner` crate to eliminate code duplication. Validators for AWS, Azure, Coinbase, GCP, JWT, JDBC, MongoDB, MySQL, Postgres, and HTTP are now maintained in a single location with proper feature gating.
 
-## [v1.78.0]c
+## [v1.78.0]
 - Added "Skipped Validations" counter to scan summary output to distinguish between validations that failed (HTTP errors, connection failures) and validations that were skipped due to missing preconditions (e.g., missing dependent rules). This provides better visibility into validation coverage for large scans.
 - Improved error messages for `kingfisher validate` command when rules require dependent variables from `depends_on` sections. Now clearly explains which variables are needed and from which dependent rules they are normally captured.
 - Fixed `validate_command` and `revoke_command` generation in scan output to include all required `--var` arguments for rules with `depends_on` sections (e.g., PubNub, Azure Storage). Commands now include dependent variables like `--var SUBSCRIPTIONTOKEN=<value>` or `--var AZURENAME=<value>`.

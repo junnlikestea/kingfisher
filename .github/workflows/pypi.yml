@@ -71,7 +71,7 @@ jobs:
           done
 
           mkdir -p extracted/bin
-          for bin in $(find extracted -type f -name "kingfisher" -o -name "kingfisher.exe"); do
+          for bin in $(find extracted -type f \( -name "kingfisher" -o -name "kingfisher.exe" \)); do
             chmod +x "$bin" || true
           done
 

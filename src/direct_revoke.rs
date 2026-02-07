@@ -307,8 +307,7 @@ async fn execute_http_revocation(
 
     let status = response.status();
     let headers = response.headers().clone();
-    let body =
-        response.text().await.unwrap_or_else(|e| format!("Failed to read response body: {}", e));
+    let body = response.text().await.context("Failed to read response body")?;
 
     let display_body = if body.len() > 500 { format!("{}...", &body[..500]) } else { body.clone() };
 
@@ -338,7 +337,7 @@ async fn execute_revocation_step(
     timeout: Duration,
     retries: u32,
     step_number: usize,
-) -> Result<(reqwest::StatusCode, String)> {
+) -> Result<(reqwest::StatusCode, reqwest::header::HeaderMap, String)> {
     let default_step_name = format!("step_{}", step_number);
     let step_name = step.name.as_ref().map(|s| s.as_str()).unwrap_or(&default_step_name);
 
@@ -368,8 +367,10 @@ async fn execute_revocation_step(
 
     let status = response.status();
     let headers = response.headers().clone();
-    let body =
-        response.text().await.unwrap_or_else(|e| format!("Failed to read response body: {}", e));
+    let body = response
+        .text()
+        .await
+        .with_context(|| format!("Failed to read response body for {}", step_name))?;
 
     // Extract variables from the response if configured
     if let Some(extractors) = &step.extract {
@@ -393,7 +394,7 @@ async fn execute_revocation_step(
         }
     }
 
-    Ok((status, body))
+    Ok((status, headers, body))
 }
 
 /// Execute multi-step HTTP revocation.
@@ -424,7 +425,7 @@ async fn execute_multi_step_revocation(
         let step_number = i + 1;
         let is_final_step = step_number == num_steps;
 
-        let (status, body) =
+        let (status, headers, body) =
             execute_revocation_step(step, globals, client, parser, timeout, retries, step_number)
                 .await?;
 
@@ -439,7 +440,6 @@ async fn execute_multi_step_revocation(
                 .as_deref()
                 .ok_or_else(|| anyhow!("Final revocation step must have response_matcher"))?;
 
-            let headers = reqwest::header::HeaderMap::new();
             let html_allowed = step.request.response_is_html;
             let revoked = validate_response(matchers, &body, &status, &headers, html_allowed);
 
@@ -783,11 +783,7 @@ mod tests {
         let body = r#"{"items":["only","two"]}"#;
         let result = extract_value_from_response(&ext, body, &HeaderMap::new(), &StatusCode::OK);
         let err = result.unwrap_err();
-        assert!(
-            err.to_string().contains("not found"),
-            "Expected 'not found', got: {}",
-            err
-        );
+        assert!(err.to_string().contains("not found"), "Expected 'not found', got: {}", err);
     }
 
     #[test]
@@ -881,14 +877,9 @@ mod tests {
     #[test]
     fn header_extraction_missing() {
         let ext = ResponseExtractor::Header { name: "x-missing".into() };
-        let result =
-            extract_value_from_response(&ext, "", &HeaderMap::new(), &StatusCode::OK);
+        let result = extract_value_from_response(&ext, "", &HeaderMap::new(), &StatusCode::OK);
         let err = result.unwrap_err();
-        assert!(
-            err.to_string().contains("not found"),
-            "Expected 'not found', got: {}",
-            err
-        );
+        assert!(err.to_string().contains("not found"), "Expected 'not found', got: {}", err);
     }
 
     // ---- extract_value_from_response: Body ----
@@ -913,8 +904,7 @@ mod tests {
     #[test]
     fn status_code_extraction_200() {
         let ext = ResponseExtractor::StatusCode;
-        let result =
-            extract_value_from_response(&ext, "", &HeaderMap::new(), &StatusCode::OK);
+        let result = extract_value_from_response(&ext, "", &HeaderMap::new(), &StatusCode::OK);
         assert_eq!(result.unwrap(), "200");
     }
 
@@ -929,8 +919,7 @@ mod tests {
     #[test]
     fn status_code_extraction_201() {
         let ext = ResponseExtractor::StatusCode;
-        let result =
-            extract_value_from_response(&ext, "", &HeaderMap::new(), &StatusCode::CREATED);
+        let result = extract_value_from_response(&ext, "", &HeaderMap::new(), &StatusCode::CREATED);
         assert_eq!(result.unwrap(), "201");
     }
 
@@ -980,10 +969,7 @@ mod tests {
     fn build_globals_sets_token() {
         let template_vars = BTreeSet::from(["TOKEN".to_string()]);
         let globals = build_globals("my-secret", &[], &[], &template_vars).unwrap();
-        assert_eq!(
-            globals.get("TOKEN"),
-            Some(Value::scalar("my-secret".to_string())).as_ref()
-        );
+        assert_eq!(globals.get("TOKEN"), Some(Value::scalar("my-secret".to_string())).as_ref());
     }
 
     #[test]
@@ -993,18 +979,9 @@ mod tests {
         let args = vec!["my-akid".to_string(), "us-east-1".to_string()];
         let globals = build_globals("secret", &args, &[], &template_vars).unwrap();
 
-        assert_eq!(
-            globals.get("TOKEN"),
-            Some(Value::scalar("secret".to_string())).as_ref()
-        );
-        assert_eq!(
-            globals.get("AKID"),
-            Some(Value::scalar("my-akid".to_string())).as_ref()
-        );
-        assert_eq!(
-            globals.get("REGION"),
-            Some(Value::scalar("us-east-1".to_string())).as_ref()
-        );
+        assert_eq!(globals.get("TOKEN"), Some(Value::scalar("secret".to_string())).as_ref());
+        assert_eq!(globals.get("AKID"), Some(Value::scalar("my-akid".to_string())).as_ref());
+        assert_eq!(globals.get("REGION"), Some(Value::scalar("us-east-1".to_string())).as_ref());
     }
 
     #[test]
@@ -1013,10 +990,7 @@ mod tests {
         let vars = vec!["AKID=explicit-value".to_string()];
         let globals = build_globals("secret", &[], &vars, &template_vars).unwrap();
 
-        assert_eq!(
-            globals.get("AKID"),
-            Some(Value::scalar("explicit-value".to_string())).as_ref()
-        );
+        assert_eq!(globals.get("AKID"), Some(Value::scalar("explicit-value".to_string())).as_ref());
     }
 
     #[test]
@@ -1060,9 +1034,7 @@ mod tests {
             request: HttpRequest {
                 method: "DELETE".into(),
                 url: "https://api.example.com/{{ AKID }}/{{ TOKEN }}".into(),
-                headers: BTreeMap::from([
-                    ("Authorization".into(), "Bearer {{ TOKEN }}".into()),
-                ]),
+                headers: BTreeMap::from([("Authorization".into(), "Bearer {{ TOKEN }}".into())]),
                 body: Some(r#"{"key":"{{ KEY_ID }}"}"#.into()),
                 response_matcher: None,
                 multipart: None,
@@ -1101,9 +1073,7 @@ mod tests {
                     request: HttpRequest {
                         method: "DELETE".into(),
                         url: "https://api.example.com/{{ KEY_ID }}".into(),
-                        headers: BTreeMap::from([
-                            ("X-Api-Key".into(), "{{ API_KEY }}".into()),
-                        ]),
+                        headers: BTreeMap::from([("X-Api-Key".into(), "{{ API_KEY }}".into())]),
                         body: None,
                         response_matcher: None,
                         multipart: None,
@@ -1144,8 +1114,14 @@ mod tests {
     #[test]
     fn find_rules_exact_match() {
         let mut rules = BTreeMap::new();
-        rules.insert("kingfisher.github.1".into(), make_test_rule("kingfisher.github.1", "GitHub Token"));
-        rules.insert("kingfisher.gitlab.1".into(), make_test_rule("kingfisher.gitlab.1", "GitLab Token"));
+        rules.insert(
+            "kingfisher.github.1".into(),
+            make_test_rule("kingfisher.github.1", "GitHub Token"),
+        );
+        rules.insert(
+            "kingfisher.gitlab.1".into(),
+            make_test_rule("kingfisher.gitlab.1", "GitLab Token"),
+        );
 
         let matched = find_rules_by_selector("kingfisher.github.1", &rules).unwrap();
         assert_eq!(matched.len(), 1);
@@ -1155,9 +1131,18 @@ mod tests {
     #[test]
     fn find_rules_prefix_match() {
         let mut rules = BTreeMap::new();
-        rules.insert("kingfisher.github.1".into(), make_test_rule("kingfisher.github.1", "GitHub PAT"));
-        rules.insert("kingfisher.github.2".into(), make_test_rule("kingfisher.github.2", "GitHub App"));
-        rules.insert("kingfisher.gitlab.1".into(), make_test_rule("kingfisher.gitlab.1", "GitLab Token"));
+        rules.insert(
+            "kingfisher.github.1".into(),
+            make_test_rule("kingfisher.github.1", "GitHub PAT"),
+        );
+        rules.insert(
+            "kingfisher.github.2".into(),
+            make_test_rule("kingfisher.github.2", "GitHub App"),
+        );
+        rules.insert(
+            "kingfisher.gitlab.1".into(),
+            make_test_rule("kingfisher.gitlab.1", "GitLab Token"),
+        );
 
         let matched = find_rules_by_selector("kingfisher.github", &rules).unwrap();
         assert_eq!(matched.len(), 2);
@@ -1166,7 +1151,10 @@ mod tests {
     #[test]
     fn find_rules_auto_prefix_kingfisher() {
         let mut rules = BTreeMap::new();
-        rules.insert("kingfisher.github.1".into(), make_test_rule("kingfisher.github.1", "GitHub Token"));
+        rules.insert(
+            "kingfisher.github.1".into(),
+            make_test_rule("kingfisher.github.1", "GitHub Token"),
+        );
 
         // Searching without "kingfisher." prefix should still find the rule
         let matched = find_rules_by_selector("github.1", &rules).unwrap();
@@ -1177,7 +1165,10 @@ mod tests {
     #[test]
     fn find_rules_no_match() {
         let mut rules = BTreeMap::new();
-        rules.insert("kingfisher.github.1".into(), make_test_rule("kingfisher.github.1", "GitHub Token"));
+        rules.insert(
+            "kingfisher.github.1".into(),
+            make_test_rule("kingfisher.github.1", "GitHub Token"),
+        );
 
         let result = find_rules_by_selector("nonexistent", &rules);
         assert!(result.is_err());
@@ -1189,7 +1180,10 @@ mod tests {
         // "kingfisher.git" should NOT match "kingfisher.github.1" because
         // "github" does not start after a '.' boundary following "git"
         let mut rules = BTreeMap::new();
-        rules.insert("kingfisher.github.1".into(), make_test_rule("kingfisher.github.1", "GitHub Token"));
+        rules.insert(
+            "kingfisher.github.1".into(),
+            make_test_rule("kingfisher.github.1", "GitHub Token"),
+        );
 
         let result = find_rules_by_selector("kingfisher.git", &rules);
         assert!(result.is_err(), "Prefix 'kingfisher.git' should not match 'kingfisher.github.1'");
