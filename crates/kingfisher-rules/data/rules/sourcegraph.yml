@@ -2,10 +2,10 @@ rules:
   - name: Sourcegraph Access Token
     id: kingfisher.sourcegraph.1
     pattern: |
-      (?xi)
+      (?x)
       \b
       (
-        sgp_(?:[A-F0-9]{16}|local)_[A-F0-9]{40}|sgp_[A-F0-9]{40}
+        sgp_(?:[a-fA-F0-9]{16}|local)_[a-fA-F0-9]{40}|sgp_[a-fA-F0-9]{40}
       )
       \b
     pattern_requirements:
