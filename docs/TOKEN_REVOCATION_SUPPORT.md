@@ -4,7 +4,7 @@ This document provides an overview of the revocation support added to Kingfisher
 
 ## Overview
 
-Revocation support has been added for **6 services** that provide verified, documented programmatic API endpoints to delete or revoke access tokens/keys. Most implementations use the **HttpMultiStep** revocation type because they require a two-step process:
+Revocation support has been added for **7 services** that provide verified, documented programmatic API endpoints to delete or revoke access tokens/keys. Most implementations use the **HttpMultiStep** revocation type because they require a two-step process:
 
 1. **Step 1 (Lookup)**: Query the API to retrieve an internal ID or token identifier
 2. **Step 2 (Delete)**: Use the extracted ID to perform the actual revocation
@@ -66,6 +66,14 @@ Revocation support has been added for **6 services** that provide verified, docu
   2. Revoke the token using its key
 - **Alternative**: Can also use `npm token revoke <id>` CLI command
 
+### 7. Vercel (Sign in with Vercel) (`vercel.yml`)
+
+- **Rule IDs**: `kingfisher.vercel.3` (App Access Token `vca_...`), `kingfisher.vercel.4` (App Refresh Token `vcr_...`)
+- **Revocation Type**: Http (single-step)
+- **Endpoint**: `POST https://api.vercel.com/login/oauth/token/revoke`
+- **Authentication**: HTTP Basic using the Vercel App's `client_id:client_secret`
+- **Required vars**: `VERCEL_APP_CLIENT_ID`, `VERCEL_APP_CLIENT_SECRET`
+- **Note**: This is the Authorization Server API used by "Sign in with Vercel" and is separate from the general REST API access tokens (PATs).
 
 ## Testing Revocation
 

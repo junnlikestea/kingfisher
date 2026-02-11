@@ -44,24 +44,135 @@ fn escape_for_shell(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
-/// Build the --var arguments string from dependent captures.
+fn extract_template_vars(text: &str) -> BTreeSet<String> {
+    // Match {{ VAR }} or {{ VAR | filter }} patterns; return VAR uppercased.
+    let re = regex::Regex::new(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:\|[^}]*)?\}\}")
+        .expect("template var regex should compile");
+    re.captures_iter(text)
+        .filter_map(|cap| cap.get(1).map(|m| m.as_str().to_uppercase()))
+        .collect()
+}
+
+fn required_vars_for_validation(validation: &crate::rules::Validation) -> BTreeSet<String> {
+    use crate::rules::Validation;
+    let mut vars = BTreeSet::new();
+
+    match validation {
+        Validation::Http(http) => {
+            vars.extend(extract_template_vars(&http.request.url));
+            for (k, v) in &http.request.headers {
+                vars.extend(extract_template_vars(k));
+                vars.extend(extract_template_vars(v));
+            }
+            if let Some(body) = &http.request.body {
+                vars.extend(extract_template_vars(body));
+            }
+        }
+        Validation::Grpc(grpc) => {
+            vars.extend(extract_template_vars(&grpc.request.url));
+            for (k, v) in &grpc.request.headers {
+                vars.extend(extract_template_vars(k));
+                vars.extend(extract_template_vars(v));
+            }
+            if let Some(body) = &grpc.request.body {
+                vars.extend(extract_template_vars(body));
+            }
+        }
+        Validation::AWS => {
+            vars.insert("AKID".to_string());
+            vars.insert("TOKEN".to_string());
+        }
+        Validation::GCP => {
+            vars.insert("TOKEN".to_string());
+        }
+        Validation::MongoDB
+        | Validation::MySQL
+        | Validation::Postgres
+        | Validation::Jdbc
+        | Validation::JWT => {
+            vars.insert("TOKEN".to_string());
+        }
+        Validation::AzureStorage => {
+            vars.insert("TOKEN".to_string());
+            vars.insert("AZURENAME".to_string());
+        }
+        Validation::Coinbase => {
+            vars.insert("TOKEN".to_string());
+            vars.insert("CRED_NAME".to_string());
+        }
+        Validation::Raw(_) => {
+            vars.insert("TOKEN".to_string());
+        }
+    }
+
+    vars
+}
+
+fn required_vars_for_revocation(revocation: &Revocation) -> BTreeSet<String> {
+    let mut vars = BTreeSet::new();
+
+    match revocation {
+        Revocation::AWS => {
+            vars.insert("AKID".to_string());
+            vars.insert("TOKEN".to_string());
+        }
+        Revocation::GCP => {
+            vars.insert("TOKEN".to_string());
+        }
+        Revocation::Http(http) => {
+            vars.extend(extract_template_vars(&http.request.url));
+            for (k, v) in &http.request.headers {
+                vars.extend(extract_template_vars(k));
+                vars.extend(extract_template_vars(v));
+            }
+            if let Some(body) = &http.request.body {
+                vars.extend(extract_template_vars(body));
+            }
+        }
+        Revocation::HttpMultiStep(multi) => {
+            for step in &multi.steps {
+                vars.extend(extract_template_vars(&step.request.url));
+                for (k, v) in &step.request.headers {
+                    vars.extend(extract_template_vars(k));
+                    vars.extend(extract_template_vars(v));
+                }
+                if let Some(body) = &step.request.body {
+                    vars.extend(extract_template_vars(body));
+                }
+            }
+        }
+    }
+
+    vars
+}
+
+/// Build the --var arguments string from dependent captures, but only for variables that are
+/// required by the validation/revocation templates.
 fn build_var_args(
     dependent_captures: &std::collections::BTreeMap<String, String>,
     akid_from_captures: Option<&str>,
     akid_from_validation_body: Option<&str>,
+    required_vars: &BTreeSet<String>,
 ) -> String {
     let mut var_args = Vec::new();
 
     // Add AKID if available (for AWS)
     if let Some(akid) = akid_from_captures.or(akid_from_validation_body) {
-        if !akid.is_empty() && !dependent_captures.contains_key("AKID") {
+        if !akid.is_empty()
+            && required_vars.contains("AKID")
+            && !dependent_captures.contains_key("AKID")
+        {
             var_args.push(format!("--var AKID={}", escape_for_shell(akid)));
         }
     }
 
-    // Add all dependent captures as --var arguments
+    // Add dependent captures only when required by the templates.
+    // This avoids generating commands like `--var BODY=...` for tokens whose named captures
+    // are just internal parsing aids (e.g., checksum payloads).
     for (name, value) in dependent_captures {
-        var_args.push(format!("--var {}={}", name, escape_for_shell(value)));
+        if required_vars.contains(name) && !name.eq_ignore_ascii_case("TOKEN") {
+            var_args.push(format!("--var {}={}", name, escape_for_shell(value)));
+        }
     }
 
     if var_args.is_empty() {
@@ -85,8 +196,13 @@ fn build_revoke_command(
     akid_from_captures: Option<&str>,
     akid_from_validation_body: Option<&str>,
 ) -> Option<String> {
-    let var_args =
-        build_var_args(dependent_captures, akid_from_captures, akid_from_validation_body);
+    let required_vars = required_vars_for_revocation(revocation);
+    let var_args = build_var_args(
+        dependent_captures,
+        akid_from_captures,
+        akid_from_validation_body,
+        &required_vars,
+    );
 
     match revocation {
         Revocation::AWS => {
@@ -146,8 +262,13 @@ fn build_validate_command(
 ) -> Option<String> {
     use crate::rules::Validation;
 
-    let var_args =
-        build_var_args(dependent_captures, akid_from_captures, akid_from_validation_body);
+    let required_vars = required_vars_for_validation(validation);
+    let var_args = build_var_args(
+        dependent_captures,
+        akid_from_captures,
+        akid_from_validation_body,
+        &required_vars,
+    );
 
     match validation {
         Validation::AWS => {
@@ -1164,8 +1285,62 @@ mod tests {
     };
     use gix::{date::Time, ObjectId};
     use smallvec::SmallVec;
+    use std::collections::BTreeMap;
     use std::path::PathBuf;
     use tempfile::tempdir;
+
+    #[test]
+    fn build_var_args_ignores_unrequired_named_captures() {
+        let dependent = BTreeMap::from([
+            ("BODY".to_string(), "payload-part".to_string()),
+            ("CHECKSUM".to_string(), "abc123".to_string()),
+        ]);
+        let required = BTreeSet::from(["TOKEN".to_string()]);
+
+        let args = build_var_args(&dependent, None, None, &required);
+        assert_eq!(args, "");
+    }
+
+    #[test]
+    fn build_validate_command_omits_body_checksum_vars_for_vercel_like_http_rule() {
+        let validation = crate::rules::Validation::Http(crate::rules::HttpValidation {
+            request: crate::rules::HttpRequest {
+                method: "GET".to_string(),
+                url: "https://api.vercel.com/v2/user".to_string(),
+                headers: BTreeMap::from([(
+                    "Authorization".to_string(),
+                    "Bearer {{TOKEN}}".to_string(),
+                )]),
+                body: None,
+                response_matcher: None,
+                multipart: None,
+                response_is_html: false,
+            },
+            multipart: None,
+        });
+        let dependent = BTreeMap::from([
+            ("BODY".to_string(), "payload-part".to_string()),
+            ("CHECKSUM".to_string(), "abc123".to_string()),
+        ]);
+
+        let cmd = build_validate_command(
+            "kingfisher.vercel.1",
+            &validation,
+            "vcp_testtoken",
+            &dependent,
+            None,
+            None,
+        )
+        .expect("validate command should be generated");
+
+        assert!(!cmd.contains("--var BODY="), "command should not include BODY var: {}", cmd);
+        assert!(
+            !cmd.contains("--var CHECKSUM="),
+            "command should not include CHECKSUM var: {}",
+            cmd
+        );
+        assert!(cmd.contains("kingfisher validate --rule kingfisher.vercel.1"));
+    }
 
     fn sample_scan_args() -> ScanArgs {
         ScanArgs {

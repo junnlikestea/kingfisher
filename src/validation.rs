@@ -675,7 +675,7 @@ async fn timed_validate_single_match<'a>(
                 Ok(resp) => {
                     let status = resp.status();
                     let headers = resp.headers().clone();
-                    let mut body = match resp.text().await {
+                    let body = match resp.text().await {
                         Ok(b) => b,
                         Err(e) => {
                             m.validation_success = false;
@@ -688,10 +688,13 @@ async fn timed_validate_single_match<'a>(
                             return;
                         }
                     };
-                    truncate_to_char_boundary(&mut body, MAX_VALIDATION_BODY_LEN);
+                    // Validate against the full response body, but keep a truncated preview for
+                    // reporting/storage to avoid huge outputs.
+                    let mut display_body = body.clone();
+                    truncate_to_char_boundary(&mut display_body, MAX_VALIDATION_BODY_LEN);
 
                     m.validation_response_status = status;
-                    let body_opt = validation_body::from_string(body.clone());
+                    let body_opt = validation_body::from_string(display_body.clone());
                     m.validation_response_body = body_opt.clone();
                     let matchers = match http_validation.request.response_matcher.as_ref() {
                         Some(m) => m,
