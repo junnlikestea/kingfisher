@@ -268,24 +268,29 @@ rules:
         skip_if_missing: true
     confidence: medium
     min_entropy: 3.5
+    # GET /v1/models returns the catalog without verifying the token (always 200).
+    # Use POST /v1/chat/completions with a minimal request instead; invalid/revoked
+    # keys return 401.
     validation:
       type: Http
       content:
         request:
-          method: GET
-          url: https://ai-gateway.vercel.sh/v1/models
+          method: POST
+          url: https://ai-gateway.vercel.sh/v1/chat/completions
           headers:
             Authorization: "Bearer {{TOKEN}}"
             Content-Type: application/json
+          body: '{"model":"openai/gpt-3.5-turbo","messages":[{"role":"user","content":"x"}],"max_tokens":1}'
           response_matcher:
             - report_response: true
             - type: StatusMatch
-              status: [200]
+              status: [200, 403]
             - type: JsonValid
             - type: WordMatch
               words:
-                - '"data"'
-              match_all_words: true
+                - '"choices"'
+                - 'valid credit card'
+              match_all_words: false
     references:
       - https://vercel.com/docs/ai-gateway/authentication-and-byok/authentication
       - https://vercel.com/docs/ai-gateway/openai-compat/rest-api

@@ -48,9 +48,7 @@ fn extract_template_vars(text: &str) -> BTreeSet<String> {
     // Match {{ VAR }} or {{ VAR | filter }} patterns; return VAR uppercased.
     let re = regex::Regex::new(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:\|[^}]*)?\}\}")
         .expect("template var regex should compile");
-    re.captures_iter(text)
-        .filter_map(|cap| cap.get(1).map(|m| m.as_str().to_uppercase()))
-        .collect()
+    re.captures_iter(text).filter_map(|cap| cap.get(1).map(|m| m.as_str().to_uppercase())).collect()
 }
 
 fn required_vars_for_validation(validation: &crate::rules::Validation) -> BTreeSet<String> {
