@@ -44,11 +44,43 @@ fn escape_for_shell(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
+static TEMPLATE_BLOCK_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
+    regex::Regex::new(r"\{\{\s*([^}]*)\}\}").expect("template block regex should compile")
+});
+
+static TEMPLATE_IDENT_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
+    regex::Regex::new(r"[A-Za-z_][A-Za-z0-9_]*").expect("template identifier regex should compile")
+});
+
+const TEMPLATE_FILTER_NAMES: &[&str] = &[
+    "append",
+    "b64enc",
+    "base62",
+    "crc32",
+    "crc32_hex",
+    "default",
+    "downcase",
+    "json_escape",
+    "prefix",
+    "replace",
+    "url_encode",
+];
+
 fn extract_template_vars(text: &str) -> BTreeSet<String> {
-    // Match {{ VAR }} or {{ VAR | filter }} patterns; return VAR uppercased.
-    let re = regex::Regex::new(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:\|[^}]*)?\}\}")
-        .expect("template var regex should compile");
-    re.captures_iter(text).filter_map(|cap| cap.get(1).map(|m| m.as_str().to_uppercase())).collect()
+    let mut vars = BTreeSet::new();
+
+    for block_cap in TEMPLATE_BLOCK_RE.captures_iter(text) {
+        let inner = block_cap.get(1).map(|m| m.as_str()).unwrap_or_default();
+        for ident_cap in TEMPLATE_IDENT_RE.captures_iter(inner) {
+            let ident = ident_cap.get(0).map(|m| m.as_str()).unwrap_or_default();
+            if TEMPLATE_FILTER_NAMES.iter().any(|f| f.eq_ignore_ascii_case(ident)) {
+                continue;
+            }
+            vars.insert(ident.to_uppercase());
+        }
+    }
+
+    vars
 }
 
 fn required_vars_for_validation(validation: &crate::rules::Validation) -> BTreeSet<String> {
@@ -168,7 +200,8 @@ fn build_var_args(
     // This avoids generating commands like `--var BODY=...` for tokens whose named captures
     // are just internal parsing aids (e.g., checksum payloads).
     for (name, value) in dependent_captures {
-        if required_vars.contains(name) && !name.eq_ignore_ascii_case("TOKEN") {
+        let name_upper = name.to_ascii_uppercase();
+        if required_vars.contains(&name_upper) && !name.eq_ignore_ascii_case("TOKEN") {
             var_args.push(format!("--var {}={}", name, escape_for_shell(value)));
         }
     }
@@ -1338,6 +1371,19 @@ mod tests {
             cmd
         );
         assert!(cmd.contains("kingfisher validate --rule kingfisher.vercel.1"));
+    }
+
+    #[test]
+    fn extract_template_vars_includes_filter_argument_vars() {
+        let text = "Basic {{ NEXT_PUBLIC_VERCEL_APP_CLIENT_ID | default: VERCEL_APP_CLIENT_ID | append: ':' | append: VERCEL_APP_CLIENT_SECRET | b64enc }}";
+        let vars = extract_template_vars(text);
+
+        assert!(vars.contains("NEXT_PUBLIC_VERCEL_APP_CLIENT_ID"));
+        assert!(vars.contains("VERCEL_APP_CLIENT_ID"));
+        assert!(vars.contains("VERCEL_APP_CLIENT_SECRET"));
+        assert!(!vars.contains("APPEND"));
+        assert!(!vars.contains("DEFAULT"));
+        assert!(!vars.contains("B64ENC"));
     }
 
     fn sample_scan_args() -> ScanArgs {

@@ -719,8 +719,9 @@ async fn timed_validate_single_match<'a>(
                     );
 
                     // Avoid poisoning the cache with transient failures (rate limits, 5xx, etc).
-                    let cacheable_status =
-                        !(status.is_server_error() || status == StatusCode::TOO_MANY_REQUESTS);
+                    let cacheable_status = !(status.is_server_error()
+                        || status == StatusCode::TOO_MANY_REQUESTS
+                        || status == StatusCode::REQUEST_TIMEOUT);
                     if !is_multipart && !cache_key.is_empty() && cacheable_status {
                         cache.insert(
                             cache_key,
