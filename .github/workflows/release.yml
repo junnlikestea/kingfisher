@@ -51,8 +51,12 @@ jobs:
       - name: Install packaging tools
         run: cargo install cargo-deb cargo-generate-rpm
 
-      - name: Build (Makefile linux-x64)
-        run: make linux-x64
+      - name: Build (Makefile linux-arm64)
+        run: make ubuntu-x64
+      - name: Run tests
+        run: make tests
+        env:
+          CARGO_BUILD_JOBS: 1
 
       - name: Fix permissions
         run: sudo chown -R $(id -u):$(id -g) target
@@ -93,7 +97,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
-
+      
       # Free up disk space on Ubuntu runners
       - name: Free Disk Space
         run: |
@@ -103,13 +107,13 @@ jobs:
           sudo rm -rf /opt/hostedtoolcache/CodeQL
           sudo docker image prune --all --force
           df -h
-
+      
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           profile: minimal
           override: true
-
+      
       - uses: swatinem/rust-cache@v2
         with:
           shared-key: kingfisher-${{ runner.os }}-${{ runner.arch }}
@@ -119,7 +123,11 @@ jobs:
         run: cargo install cargo-deb cargo-generate-rpm
 
       - name: Build (Makefile linux-arm64)
-        run: make linux-arm64
+        run: make ubuntu-arm64
+      - name: Run tests
+        run: make tests
+        env:
+          CARGO_BUILD_JOBS: 1
 
       - name: Fix permissions
         run: sudo chown -R $(id -u):$(id -g) target
