@@ -2,6 +2,7 @@ SHELL := /usr/bin/env bash
 .SHELLFLAGS := -eu -o pipefail -c
 
 PROJECT_NAME := kingfisher
+ZIG_VERSION ?= 0.15.1
 
 # Determine OS and whether to use gtar on darwin
 OS := $(shell uname)
@@ -74,7 +75,7 @@ create-dockerignore:
 .PHONY: setup-zig
 setup-zig:
 	@command -v zig >/dev/null 2>&1 || { \
-	  echo "⬇️  Installing Zig 0.14.0 …"; \
+	  echo "⬇️  Installing Zig $(ZIG_VERSION) …"; \
 	  if $(SUDO_CMD) apt-get update -qq && \
 	     $(SUDO_CMD) apt-get install -y --no-install-recommends zig 2>/dev/null ; then \
 	    echo "✓ Zig installed via apt"; \
@@ -82,11 +83,11 @@ setup-zig:
 	    echo "⚠️  Package 'zig' not in apt repos – falling back to manual install"; \
 	    arch=$$(uname -m); \
 	    case "$$arch" in \
-	      x86_64)   pkg=zig-linux-x86_64-0.14.0 ;; \
-	      aarch64|arm64) pkg=zig-linux-aarch64-0.14.0 ;; \
+	      x86_64)   pkg=zig-linux-x86_64-$(ZIG_VERSION) ;; \
+	      aarch64|arm64) pkg=zig-linux-aarch64-$(ZIG_VERSION) ;; \
 	      *) echo "Unsupported architecture: $$arch"; exit 1 ;; \
 	    esac; \
-	    curl -L -o /tmp/zig.tar.xz https://ziglang.org/download/0.14.0/$${pkg}.tar.xz; \
+	    curl -L -o /tmp/zig.tar.xz https://ziglang.org/download/$(ZIG_VERSION)/$${pkg}.tar.xz; \
 	    tar -C /tmp -xf /tmp/zig.tar.xz; \
 	    $(SUDO_CMD) mv /tmp/$${pkg} /opt/zig; \
 	    $(SUDO_CMD) ln -sf /opt/zig/zig /usr/local/bin/zig; \
@@ -128,6 +129,7 @@ ubuntu-x64: setup-zig   # ensures Zig & cargo-zigbuild exist
 	@. $$HOME/.cargo/env && \
 	    rustup target add x86_64-unknown-linux-musl && \
 	    export PKG_CONFIG_ALLOW_CROSS=1 && \
+	    export CMAKE_ARGS_x86_64_unknown_linux_musl="-DHAVE_UNISTD_H=1 -DHAVE_POSIX_MEMALIGN=1" && \
 	    cargo zigbuild --release --target x86_64-unknown-linux-musl
 
 	@echo "🗜️   Packaging archive …"
