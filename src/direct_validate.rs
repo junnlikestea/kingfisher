@@ -39,6 +39,7 @@ use crate::{
         GLOBAL_USER_AGENT,
     },
     validation_body,
+    validation_rate_limit::{should_rate_limit_validation, ValidationRateLimiter},
 };
 
 use crate::grpc_validation;
@@ -452,6 +453,9 @@ pub async fn run_direct_validation(
     let parser = register_all(liquid::ParserBuilder::with_stdlib()).build()?;
 
     let timeout = Duration::from_secs(args.timeout);
+    let rate_limiter =
+        ValidationRateLimiter::from_cli(args.validation_rps, &args.validation_rps_rule)?
+            .map(Arc::new);
 
     let mut results = Vec::new();
 
@@ -547,6 +551,12 @@ pub async fn run_direct_validation(
                 rule_id,
                 var_hints.join(" ")
             );
+        }
+
+        if let Some(limiter) = rate_limiter.as_deref() {
+            if should_rate_limit_validation(validation) {
+                limiter.wait_for_rule(&rule_id).await;
+            }
         }
 
         // Execute validation based on type
@@ -955,6 +965,8 @@ pub(crate) fn create_minimal_scan_args() -> crate::cli::commands::scan::ScanArgs
         no_ignore_if_contains: false,
         validation_timeout: 10,
         validation_retries: 1,
+        validation_rps: None,
+        validation_rps_rule: Vec::new(),
         full_validation_response: false,
     }
 }

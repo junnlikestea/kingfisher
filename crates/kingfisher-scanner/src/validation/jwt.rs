@@ -162,7 +162,9 @@ pub async fn validate_jwt_with(
         return Ok((false, "no kid in header".into()));
     };
 
-    let config_url = format!("{}/.well-known/openid-configuration", issuer.trim_end_matches('/'));
+    let issuer_url = normalize_issuer_url(&issuer)?;
+    let config_url =
+        format!("{}/.well-known/openid-configuration", issuer_url.as_str().trim_end_matches('/'));
     let cfg_resp = client
         .get(&config_url)
         .send()
@@ -186,11 +188,7 @@ pub async fn validate_jwt_with(
         return Ok((false, "jwks_uri must use https".to_string()));
     }
 
-    let iss_host = Url::parse(&issuer)
-        .map_err(|e| anyhow!("invalid iss: {e}"))?
-        .host_str()
-        .unwrap_or_default()
-        .to_ascii_lowercase();
+    let iss_host = issuer_url.host_str().unwrap_or_default().to_ascii_lowercase();
     let jwks_host = url.host_str().unwrap_or_default().to_ascii_lowercase();
     if jwks_host != iss_host {
         return Ok((
@@ -244,4 +242,27 @@ fn extract_aud_strings(claims: &Claims) -> Vec<String> {
 
 fn is_blocked_ip(ip: std::net::IpAddr) -> bool {
     BLOCKED_NETS.iter().filter_map(|cidr| cidr.parse::<IpNet>().ok()).any(|net| net.contains(&ip))
+}
+
+fn normalize_issuer_url(issuer: &str) -> Result<Url> {
+    let trimmed = issuer.trim();
+    if trimmed.is_empty() {
+        return Err(anyhow!("invalid iss: empty issuer"));
+    }
+
+    if let Ok(url) = Url::parse(trimmed) {
+        if url.host_str().is_some() {
+            return Ok(url);
+        }
+    }
+
+    if !trimmed.contains("://") {
+        let with_https = format!("https://{trimmed}");
+        let url = Url::parse(&with_https).map_err(|e| anyhow!("invalid iss: {e}"))?;
+        if url.host_str().is_some() {
+            return Ok(url);
+        }
+    }
+
+    Err(anyhow!("invalid iss: missing host"))
 }

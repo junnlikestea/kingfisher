@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.82.0]
+- Added Vercel credential rules for new token formats introduced February 2026: `vcp_` (personal access), `vci_` (integration), `vca_` (app access), `vcr_` (app refresh), `vck_` (AI Gateway API key). All use CRC32/Base62 checksum validation. Legacy 24-char format retained as `kingfisher.vercel.1`.
+- Added revocation support for Vercel app tokens (`vca_`, `vcr_`) via `https://api.vercel.com/login/oauth/token/revoke`. Requires `VERCEL_APP_CLIENT_ID` (or `NEXT_PUBLIC_VERCEL_APP_CLIENT_ID`) and `VERCEL_APP_CLIENT_SECRET`.
+- Fixed validate/revoke command generation to omit regex named captures (e.g., `BODY`, `CHECKSUM`) when they are not used by validation/revocation templates, so rules like Vercel no longer produce unnecessary `--var BODY=...` arguments.
+- Fixed HTTP validation incorrectly marking valid credentials as inactive when response bodies exceeded 2048 bytes. Matchers (`JsonValid`, `WordMatch`, etc.) now run against the full response; only the stored preview remains truncated for reporting.
+- Fixed validation flakiness under service rate limiting by retrying HTTP validations on 429/408 in addition to transient 5xx failures.
+- Added optional validation rate limiting via `--validation-rps` (global) and repeatable `--validation-rps-rule <RULE_SELECTOR=RPS>` (per-rule override) for both `scan` and `validate`. Throttling now applies across built-in validator types (HTTP/gRPC plus AWS, GCP, Coinbase, MongoDB, Postgres, MySQL, JDBC, JWT, and Azure Storage). Rule selectors support the short form (for example, `github=2` matches `kingfisher.github.*`) with longest-prefix precedence when multiple selectors apply.
+- Prevented transient HTTP validation failures (429/5xx) from being cached, avoiding cache poisoning that could suppress later successful validations in the same scan.
+- Added `kingfisher.temporal.1` rule for Temporal Cloud API keys (namespace-scoped and user-scoped JWT formats) with Temporal-specific pattern matching.
+- Added Temporal Cloud active credential validation via `GET https://saas-api.tmprl.cloud/cloud/current-identity` using bearer auth, so Temporal keys validate against provider APIs instead of generic OIDC discovery.
+- Fixed JWT issuer normalization to treat bare host issuers (e.g. `iss: "temporal.io"`) as HTTPS URLs during discovery, avoiding low-level URL builder failures.
+- Added `crates/kingfisher-rules/build.rs` to ensure embedded rule assets rebuild when files under `crates/kingfisher-rules/data` change.
+
 ## [v1.81.0]
 - Fixed checksum-template evaluation for prefixed tokens by using explicit checksum/body captures in NPM, GitHub, Confluent, and GitLab rules.
 - Updated references sections to rules with API documentation links.
