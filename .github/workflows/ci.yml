@@ -36,6 +36,9 @@ jobs:
           override: true
       
       - uses: swatinem/rust-cache@v2
+        with:
+          shared-key: kingfisher-${{ runner.os }}-${{ runner.arch }}
+          cache-on-failure: true
       
       - name: Build (Makefile linux-arm64)
         run: make ubuntu-arm64
@@ -55,6 +58,9 @@ jobs:
           profile: minimal
           override: true
       - uses: swatinem/rust-cache@v2
+        with:
+          shared-key: kingfisher-${{ runner.os }}-${{ runner.arch }}
+          cache-on-failure: true
       - name: Build (Makefile darwin-arm64)
         run: make darwin-arm64
       - name: Run tests
@@ -136,6 +142,9 @@ jobs:
           Get-ChildItem $env:VCPKG_DOWNLOADS
 
       - uses: swatinem/rust-cache@v2
+        with:
+          shared-key: kingfisher-${{ runner.os }}-${{ runner.arch }}
+          cache-on-failure: true
 
       - name: Build
         run: .\buildwin.bat

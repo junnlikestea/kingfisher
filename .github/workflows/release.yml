@@ -44,12 +44,20 @@ jobs:
           override: true
 
       - uses: swatinem/rust-cache@v2
+        with:
+          shared-key: kingfisher-${{ runner.os }}-${{ runner.arch }}
+          cache-on-failure: true
 
       - name: Install packaging tools
         run: cargo install cargo-deb cargo-generate-rpm
 
-      - name: Build (Makefile linux-x64)
-        run: make linux-x64
+      - name: Build (Makefile ubuntu-x64)
+        run: make ubuntu-x64
+
+      - name: Run tests
+        run: make tests
+        env:
+          CARGO_BUILD_JOBS: 1
 
       - name: Fix permissions
         run: sudo chown -R $(id -u):$(id -g) target
@@ -108,12 +116,20 @@ jobs:
           override: true
 
       - uses: swatinem/rust-cache@v2
+        with:
+          shared-key: kingfisher-${{ runner.os }}-${{ runner.arch }}
+          cache-on-failure: true
 
       - name: Install packaging tools
         run: cargo install cargo-deb cargo-generate-rpm
 
-      - name: Build (Makefile linux-arm64)
-        run: make linux-arm64
+      - name: Build (Makefile ubuntu-arm64)
+        run: make ubuntu-arm64
+
+      - name: Run tests
+        run: make tests
+        env:
+          CARGO_BUILD_JOBS: 1
 
       - name: Fix permissions
         run: sudo chown -R $(id -u):$(id -g) target
@@ -162,9 +178,15 @@ jobs:
           override: true
 
       - uses: swatinem/rust-cache@v2
+        with:
+          shared-key: kingfisher-${{ runner.os }}-${{ runner.arch }}
+          cache-on-failure: true
 
       - name: Build Darwin x64
         run: make darwin-x64
+
+      - name: Run tests
+        run: make tests
 
       - name: Move artifacts to dist
         shell: bash
@@ -190,6 +212,9 @@ jobs:
           override: true
 
       - uses: swatinem/rust-cache@v2
+        with:
+          shared-key: kingfisher-${{ runner.os }}-${{ runner.arch }}
+          cache-on-failure: true
 
       - name: Build Darwin arm64
         run: make darwin-arm64
@@ -285,6 +310,9 @@ jobs:
 
 
       - uses: swatinem/rust-cache@v2
+        with:
+          shared-key: kingfisher-${{ runner.os }}-${{ runner.arch }}
+          cache-on-failure: true
 
       - name: Build
         run: .\buildwin.bat
