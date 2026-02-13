@@ -99,7 +99,8 @@ setup-zig:
 	      exit 1; \
 	    }; \
 	    tar -C /tmp -xf /tmp/zig.tar.xz; \
-	    zig_dir=$$(tar -tf /tmp/zig.tar.xz | head -n1 | cut -d/ -f1); \
+	    tar -tf /tmp/zig.tar.xz > /tmp/zig-contents.txt; \
+	    IFS=/ read -r zig_dir _ < /tmp/zig-contents.txt; \
 	    [ -n "$$zig_dir" ] || { echo "Could not determine Zig extract directory"; exit 1; }; \
 	    $(SUDO_CMD) rm -rf /opt/zig; \
 	    $(SUDO_CMD) mv "/tmp/$${zig_dir}" /opt/zig; \
