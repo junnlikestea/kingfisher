@@ -853,6 +853,212 @@
 
     .hidden { display: none !important; }
 
+    /* Blast Radius (finding detail) */
+    .blast-radius {
+      margin-top: 20px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .blast-radius__header {
+      padding: 12px 16px;
+      background: var(--surface-strong);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .blast-radius__header h4 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .blast-radius__body {
+      padding: 16px;
+    }
+
+    .risk-rationale {
+      padding: 12px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      line-height: 1.6;
+      margin-bottom: 14px;
+    }
+
+    .risk-rationale.critical {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
+    }
+
+    .risk-rationale.high {
+      background: #fff7ed;
+      border: 1px solid #fed7aa;
+      color: #9a3412;
+    }
+
+    .risk-rationale.medium {
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      color: #92400e;
+    }
+
+    .risk-rationale.low {
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      color: #166534;
+    }
+
+    .risk-rationale.none {
+      background: var(--surface-muted);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+    }
+
+    :root[data-theme="dark"] .risk-rationale.critical {
+      background: rgba(239, 68, 68, 0.1);
+      border-color: rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+    }
+
+    :root[data-theme="dark"] .risk-rationale.high {
+      background: rgba(249, 115, 22, 0.1);
+      border-color: rgba(249, 115, 22, 0.3);
+      color: #fdba74;
+    }
+
+    :root[data-theme="dark"] .risk-rationale.medium {
+      background: rgba(234, 179, 8, 0.1);
+      border-color: rgba(234, 179, 8, 0.3);
+      color: #fde68a;
+    }
+
+    :root[data-theme="dark"] .risk-rationale.low {
+      background: rgba(34, 197, 94, 0.1);
+      border-color: rgba(34, 197, 94, 0.3);
+      color: #86efac;
+    }
+
+    :root[data-theme="dark"] .risk-rationale.none {
+      background: var(--surface-muted);
+      border-color: var(--border);
+      color: var(--text-muted);
+    }
+
+    .blast-identity {
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface-muted);
+      margin-bottom: 10px;
+    }
+
+    .blast-identity__header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+
+    .blast-resource-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .blast-resource-item {
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      font-size: 13px;
+    }
+
+    .blast-resource-name {
+      font-weight: 600;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      word-break: break-all;
+    }
+
+    .blast-perms {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 6px;
+    }
+
+    .blast-perm-tag {
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      background: #ecfdf5;
+      color: #16a34a;
+      border: 1px solid #bbf7d0;
+    }
+
+    :root[data-theme="dark"] .blast-perm-tag {
+      background: rgba(34, 197, 94, 0.1);
+      color: #86efac;
+      border-color: rgba(34, 197, 94, 0.3);
+    }
+
+    /* Scan metadata bar */
+    .scan-meta-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      padding: 14px 20px;
+      background: var(--surface-muted);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .scan-meta-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .scan-meta-item strong {
+      color: var(--text-main);
+      font-weight: 600;
+    }
+
+    /* Report type selector */
+    .report-type-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 12px 0;
+      border-top: 1px solid var(--border);
+      margin-top: 8px;
+    }
+
+    .report-type-group label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
     .loading-overlay {
       position: fixed;
       inset: 0;
@@ -961,21 +1167,39 @@
               Findings
             </button>
           </div>
-          <div class="nav-group" style="display:flex; flex-direction:column; gap:10px;">
-            <button class="btn" id="download-findings-report" type="button" style="width:100%;">Download Findings Report</button>
-            <div style="display:flex; flex-direction:column; gap:6px;">
-              <span style="font-size:11px; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted);">Findings scope</span>
+          <div class="report-type-group">
+            <label>For Researchers</label>
+            <button class="btn" id="download-risk-report" type="button" style="width:100%;">Risk Report</button>
+            <label style="display:flex; align-items:center; gap:6px; font-size:12px; text-transform:none; letter-spacing:normal; color:var(--text-main); cursor:pointer; margin-top:2px;">
+              <input type="checkbox" id="risk-active-only"> Active credentials only
+            </label>
+            <div style="font-size:11px; color:var(--text-muted); line-height:1.4;">Findings + blast radius per credential. Suitable for bug bounty submissions.</div>
+          </div>
+          <div class="report-type-group">
+            <label>For Defenders</label>
+            <button class="btn" id="download-scan-report" type="button" style="width:100%;">Scan Report</button>
+            <div style="display:flex; flex-direction:column; gap:6px; margin-top:4px;">
               <select id="report-scope" class="rows-select">
                 <option value="all" selected>All findings</option>
                 <option value="filtered">Filtered findings</option>
               </select>
             </div>
-            <button class="btn" id="download-access-report" type="button" style="width:100%;" disabled>Download Access Map Report</button>
+            <label style="display:flex; align-items:center; gap:6px; font-size:12px; text-transform:none; letter-spacing:normal; color:var(--text-main); cursor:pointer;">
+              <input type="checkbox" id="scan-active-only"> Active credentials only
+            </label>
+            <div style="font-size:11px; color:var(--text-muted); line-height:1.4;">Scan summary for tickets and remediation tracking.</div>
+            <button class="btn" id="download-access-report" type="button" style="width:100%; margin-top:4px;" disabled>Access Map Report</button>
           </div>
         </aside>
 
         <div class="view-stack">
           <section id="view-dashboard" class="view">
+            <div id="scan-meta-section" class="scan-meta-bar hidden">
+              <div class="scan-meta-item"><strong>Report Generated:</strong> <span id="meta-timestamp">—</span></div>
+              <div class="scan-meta-item" id="meta-target-wrap" style="display:none;"><strong>Target:</strong> <span id="meta-target">—</span></div>
+              <div class="scan-meta-item" id="meta-duration-wrap" style="display:none;"><strong>Duration:</strong> <span id="meta-duration">—</span></div>
+              <div class="scan-meta-item" id="meta-version-wrap" style="display:none;"><strong>Version:</strong> <span id="meta-version">—</span></div>
+            </div>
             <section class="panel">
               <div class="metrics-grid">
                 <div class="metric">
@@ -1273,6 +1497,22 @@
                     </button>
                   </div>
                 </div>
+
+                <div id="fd-blast-radius" class="blast-radius hidden">
+                  <div class="blast-radius__header">
+                    <h4>
+                      <span>Blast Radius</span>
+                      <span id="fd-blast-count" class="badge" style="font-size:11px;"></span>
+                    </h4>
+                    <button class="btn" id="fd-export-risk-report" type="button" style="font-size:12px; padding:6px 12px;">
+                      Export Risk Report
+                    </button>
+                  </div>
+                  <div class="blast-radius__body">
+                    <div id="fd-risk-rationale" class="risk-rationale none"></div>
+                    <div id="fd-blast-entries"></div>
+                  </div>
+                </div>
               </div>
             </section>
           </section>
@@ -1293,6 +1533,8 @@
     let sortField = "rule";
     let sortDirection = "asc";
     let autoCollapsedAccessMap = false;
+    let currentDetailFinding = null;
+    let scanMetadata = {};
 
     const dropZone = document.getElementById("drop-zone");
     const fileInput = document.getElementById("file-input");
@@ -1301,9 +1543,11 @@
     const errorMsg = document.getElementById("error-msg");
     const uploadSection = document.getElementById("upload-section");
     const dashboard = document.getElementById("dashboard");
-    const downloadFindingsReportBtn = document.getElementById("download-findings-report");
+    const downloadRiskReportBtn = document.getElementById("download-risk-report");
+    const downloadScanReportBtn = document.getElementById("download-scan-report");
     const reportScopeSelect = document.getElementById("report-scope");
     const downloadAccessReportBtn = document.getElementById("download-access-report");
+    const exportFindingRiskBtn = document.getElementById("fd-export-risk-report");
 
     const searchInput = document.getElementById("search-input");
     const validationSelect = document.getElementById("validation-filter");
@@ -1423,14 +1667,28 @@
     downloadJsonBtn.addEventListener("click", downloadFindingsJson);
     downloadCsvBtn.addEventListener("click", downloadFindingsCsv);
     copyAccessMapButton.addEventListener("click", copyFilteredAccessMap);
-    if (downloadFindingsReportBtn) {
-      downloadFindingsReportBtn.addEventListener("click", () => {
+    if (downloadRiskReportBtn) {
+      downloadRiskReportBtn.addEventListener("click", () => {
+        const activeOnly = document.getElementById("risk-active-only");
+        generateRiskReport({ activeOnly: activeOnly && activeOnly.checked });
+      });
+    }
+    if (downloadScanReportBtn) {
+      downloadScanReportBtn.addEventListener("click", () => {
         const scope = reportScopeSelect ? reportScopeSelect.value : "all";
-        generatePdfReport(scope);
+        const activeOnly = document.getElementById("scan-active-only");
+        generateScanReport(scope, { activeOnly: activeOnly && activeOnly.checked });
       });
     }
     if (downloadAccessReportBtn) {
       downloadAccessReportBtn.addEventListener("click", generateAccessMapReport);
+    }
+    if (exportFindingRiskBtn) {
+      exportFindingRiskBtn.addEventListener("click", () => {
+        if (currentDetailFinding) {
+          exportSingleFindingRiskReport(currentDetailFinding);
+        }
+      });
     }
     if (themeToggle) {
       themeToggle.addEventListener("click", () => {
@@ -1628,6 +1886,8 @@
       accessMap = [];
       filteredAccessMapView = [];
       rawData = null;
+      currentDetailFinding = null;
+      scanMetadata = {};
 
       currentFilter = "";
       validationFilter = "all";
@@ -1650,6 +1910,13 @@
       renderAccessMapTree();
       renderFindingsTable();
       updateMetrics();
+
+      const scanMetaSection = document.getElementById("scan-meta-section");
+      if (scanMetaSection) scanMetaSection.classList.add("hidden");
+      const blastSection = document.getElementById("fd-blast-radius");
+      if (blastSection) blastSection.classList.add("hidden");
+      const findingDetail = document.getElementById("finding-detail");
+      if (findingDetail) findingDetail.classList.add("hidden");
 
       setActiveView("view-dashboard");
       dashboard.classList.add("hidden");
@@ -1712,8 +1979,10 @@
       searchInput.value = "";
       validationSelect.value = "all";
 
+      extractScanMetadata();
       setActiveView("view-dashboard");
       updateMetrics();
+      renderScanMetadata();
       renderAccessMapTree();
       renderFindingsTable();
 
@@ -1723,6 +1992,84 @@
       const elapsed = performance.now() - t0;
       loaderText.textContent = "Done in " + elapsed.toFixed(1) + " ms";
       setTimeout(() => loader.classList.add("hidden"), 250);
+    }
+
+    function extractScanMetadata() {
+      scanMetadata = {};
+      if (!rawData || typeof rawData !== "object") {
+        scanMetadata.timestamp = new Date().toLocaleString();
+        return;
+      }
+
+      // Try to extract metadata from the raw report data
+      const data = rawData;
+      scanMetadata.timestamp = data.timestamp || data.scan_timestamp || data.generated_at || new Date().toLocaleString();
+
+      // Target info
+      scanMetadata.target = data.target || data.scan_target || data.repository || data.repo ||
+        (data.stats && data.stats.target) ||
+        (data.summary && data.summary.target) || "";
+
+      // Duration
+      const duration = data.scan_duration || data.scanDuration ||
+        (data.stats && data.stats.duration) ||
+        (data.summary && data.summary.duration) || "";
+      if (duration) {
+        scanMetadata.duration = typeof duration === "number" ? (duration / 1000).toFixed(1) + "s" : String(duration);
+      }
+
+      // Version
+      scanMetadata.version = data.version || data.kingfisher_version ||
+        (data.kingfisher && data.kingfisher.version) || "";
+
+      // Bytes scanned
+      const bytes = data.bytes_scanned ||
+        (data.stats && data.stats.bytes_scanned) ||
+        (data.summary && data.summary.bytes_scanned) || 0;
+      if (bytes > 0) {
+        scanMetadata.bytesScanned = bytes >= 1048576
+          ? (bytes / 1048576).toFixed(1) + " MB"
+          : bytes >= 1024
+            ? (bytes / 1024).toFixed(1) + " KB"
+            : bytes + " B";
+      }
+    }
+
+    function renderScanMetadata() {
+      const section = document.getElementById("scan-meta-section");
+      if (!section) return;
+
+      const ts = document.getElementById("meta-timestamp");
+      const targetWrap = document.getElementById("meta-target-wrap");
+      const target = document.getElementById("meta-target");
+      const durationWrap = document.getElementById("meta-duration-wrap");
+      const duration = document.getElementById("meta-duration");
+      const versionWrap = document.getElementById("meta-version-wrap");
+      const version = document.getElementById("meta-version");
+
+      section.classList.remove("hidden");
+      if (ts) ts.textContent = scanMetadata.timestamp || new Date().toLocaleString();
+
+      if (scanMetadata.target) {
+        targetWrap.style.display = "";
+        target.textContent = scanMetadata.target;
+      } else {
+        targetWrap.style.display = "none";
+      }
+
+      if (scanMetadata.duration) {
+        durationWrap.style.display = "";
+        duration.textContent = scanMetadata.duration;
+      } else {
+        durationWrap.style.display = "none";
+      }
+
+      if (scanMetadata.version) {
+        versionWrap.style.display = "";
+        version.textContent = scanMetadata.version;
+      } else {
+        versionWrap.style.display = "none";
+      }
     }
 
     function updateMetrics() {
@@ -2128,15 +2475,25 @@
         .join("");
     }
 
-    function generatePdfReport(scope = "all") {
-      if (!rawData) {
-        alert("Load a report before downloading a Findings report.");
+    function generateScanReport(scope = "all", { activeOnly = false } = {}) {
+      if (!findings || findings.length === 0) {
+        alert("Load a report before downloading a Scan report.");
         return;
       }
 
       const statusOrder = { active: 0, inactive: 1, not_attempted: 2, unknown: 3 };
-      const baseFindings =
+      let baseFindings =
         scope === "filtered" ? getFilteredSortedFindings().slice() : (Array.isArray(findings) ? findings.slice() : []);
+      if (activeOnly) {
+        baseFindings = baseFindings.filter((f) => {
+          const fd = f.finding || {};
+          return normalizeValidationStatus(fd.validation && fd.validation.status ? fd.validation.status : "") === "active";
+        });
+        if (baseFindings.length === 0) {
+          alert("No active credentials found for the selected scope. Uncheck 'Active credentials only' to include all findings.");
+          return;
+        }
+      }
       const findingsForReport = baseFindings.slice();
       findingsForReport.sort((a, b) => {
         const fa = a.finding || {};
@@ -2159,7 +2516,27 @@
         const conf = f.finding && f.finding.confidence ? String(f.finding.confidence) : "";
         return conf.toLowerCase() === "high";
       }).length;
-      const scopeLabel = scope === "filtered" ? "Filtered findings" : "All findings";
+      const scopeLabel = (scope === "filtered" ? "Filtered findings" : "All findings") + (activeOnly ? " (active only)" : "");
+
+      // Gather unique rules for summary
+      const ruleSummary = {};
+      baseFindings.forEach((entry) => {
+        const rule = entry.rule || {};
+        const finding = entry.finding || {};
+        const key = rule.id || rule.name || "unknown";
+        if (!ruleSummary[key]) {
+          ruleSummary[key] = { name: rule.name || rule.id || "Unknown", count: 0, active: 0 };
+        }
+        ruleSummary[key].count++;
+        if (normalizeValidationStatus(finding.validation && finding.validation.status ? finding.validation.status : "") === "active") {
+          ruleSummary[key].active++;
+        }
+      });
+
+      const ruleSummaryRows = Object.values(ruleSummary)
+        .sort((a, b) => b.active - a.active || b.count - a.count)
+        .map((r) => `<tr><td>${escapeHtml(r.name)}</td><td>${r.count}</td><td style="color:${r.active > 0 ? "#dc2626" : "#6b7280"};font-weight:${r.active > 0 ? "700" : "400"};">${r.active}</td></tr>`)
+        .join("");
 
       const findingsHtml = findingsForReport.length
         ? findingsForReport
@@ -2167,113 +2544,155 @@
               const rule = entry.rule || {};
               const finding = entry.finding || {};
               const statusRaw = finding.validation && finding.validation.status ? finding.validation.status : "Unknown";
-              const status = normalizeValidationStatus(statusRaw);
+              const normalizedStatus = normalizeValidationStatus(statusRaw);
               const findingId = getFindingIdFromFinding(finding);
               const gitUrl = getFileUrlFromFinding(finding);
-              const snippet = (finding.snippet || "").toString().replace(/\s+/g, " ").trim();
+              const statusColor = normalizedStatus === "active" ? "#dc2626" : normalizedStatus === "inactive" ? "#f97316" : "#6b7280";
               return `
                 <tr>
                   <td>${escapeHtml(rule.name || rule.id || "")}</td>
-                  <td>${escapeHtml(findingId || "")}</td>
-                  <td>${escapeHtml(finding.path || "")}</td>
-                  <td>${escapeHtml(statusRaw)}</td>
-                  <td>${finding.line != null ? escapeHtml(finding.line) : ""}</td>
-                  <td>${escapeHtml(gitUrl || "")}</td>
-                  <td>${escapeHtml(snippet.slice(0, 200))}</td>
+                  <td style="font-size:10px;font-family:monospace;">${escapeHtml(findingId ? findingId.substring(0, 12) : "")}</td>
+                  <td style="font-size:10px;">${escapeHtml(finding.path || "")}</td>
+                  <td style="color:${statusColor};font-weight:600;">${escapeHtml(statusRaw)}</td>
+                  <td>${escapeHtml(finding.confidence || "")}</td>
+                  <td>${finding.line != null ? finding.line : ""}</td>
+                  ${gitUrl ? `<td style="font-size:10px;"><a href="${escapeHtml(gitUrl)}" style="color:#1d4ed8;">${escapeHtml(gitUrl.length > 50 ? gitUrl.substring(0, 50) + "..." : gitUrl)}</a></td>` : "<td></td>"}
                 </tr>
               `;
             })
             .join("")
         : '<tr><td colspan="7">No findings available.</td></tr>';
 
-      const accessListHtml = hasAccess
-        ? buildAccessMapListHtml()
+      // Scan metadata section
+      const metaLines = [];
+      if (scanMetadata.timestamp) metaLines.push(`<strong>Scan Date:</strong> ${escapeHtml(scanMetadata.timestamp)}`);
+      if (scanMetadata.target) metaLines.push(`<strong>Target:</strong> ${escapeHtml(scanMetadata.target)}`);
+      if (scanMetadata.duration) metaLines.push(`<strong>Duration:</strong> ${escapeHtml(scanMetadata.duration)}`);
+      if (scanMetadata.version) metaLines.push(`<strong>Version:</strong> ${escapeHtml(scanMetadata.version)}`);
+      const metaHtml = metaLines.length
+        ? `<div style="display:flex;flex-wrap:wrap;gap:16px;padding:10px 14px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;font-size:12px;margin-bottom:16px;">${metaLines.join('<span style="color:#cbd5e1;">|</span>')}</div>`
         : "";
 
-      const accessSectionContent = hasAccess
-        ? `<ul class="access-list">${accessListHtml}</ul>`
-        : "<p>No Access Map entries were found for this report.</p>";
+      // Executive summary
+      let execSummary = "";
+      if (counts.active > 0) {
+        execSummary = `<div style="padding:12px 16px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;font-size:13px;color:#991b1b;line-height:1.6;margin-bottom:16px;">
+          <strong>Action Required:</strong> This scan found <strong>${counts.active} active credential${counts.active !== 1 ? "s" : ""}</strong> that validated successfully.
+          These credentials are live and should be rotated or revoked immediately.
+          ${highConfidence > 0 ? `${highConfidence} finding${highConfidence !== 1 ? "s" : ""} ${highConfidence !== 1 ? "are" : "is"} high confidence.` : ""}
+          ${hasAccess ? `Access mapping identified ${accessMap.length} identit${accessMap.length !== 1 ? "ies" : "y"} with resource access.` : ""}
+        </div>`;
+      } else if (baseFindings.length > 0) {
+        execSummary = `<div style="padding:12px 16px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;font-size:13px;color:#92400e;line-height:1.6;margin-bottom:16px;">
+          <strong>Review Recommended:</strong> This scan found <strong>${baseFindings.length} finding${baseFindings.length !== 1 ? "s" : ""}</strong>.
+          ${counts.inactive > 0 ? `${counts.inactive} credential${counts.inactive !== 1 ? "s were" : " was"} inactive at scan time.` : ""}
+          ${counts.not_attempted > 0 ? `${counts.not_attempted} ${counts.not_attempted !== 1 ? "were" : "was"} not validated.` : ""}
+        </div>`;
+      } else {
+        execSummary = `<div style="padding:12px 16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;font-size:13px;color:#166534;line-height:1.6;margin-bottom:16px;">
+          <strong>Clean Scan:</strong> No findings detected in this scan.
+        </div>`;
+      }
 
-      const pdfHtml = `
-        <!doctype html>
-        <html>
-        <head>
-          <meta charset="UTF-8">
-          <title>Kingfisher Report</title>
-          <style>
-            * { box-sizing: border-box; }
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 16px; color: #0f172a; }
-            h1, h2, h3 { margin: 0 0 12px; }
-            .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px; }
-            .stat { padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; background: #f8fafc; }
-            .stat .label { font-size: 12px; text-transform: uppercase; color: #6b7280; letter-spacing: 0.05em; }
-            .stat .value { font-size: 22px; font-weight: 700; margin-top: 6px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 8px; table-layout: fixed; }
-            th, td { border: 1px solid #d1d5db; padding: 6px 8px; font-size: 11px; text-align: left; word-break: break-word; overflow-wrap: anywhere; }
-            th { background: #e5e7eb; }
-            .section { margin-bottom: 28px; }
-            .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #e0f2fe; color: #075985; font-weight: 700; font-size: 12px; margin-left: 8px; }
-            .access-list { list-style: none; padding-left: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
-            .access-entry { border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; background: #f8fafc; }
-            .access-head { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
-            .access-groups { margin: 0; padding-left: 16px; color: #1f2937; }
-            .meta { color: #4b5563; font-size: 13px; margin-bottom: 14px; }
-            .chart-wrapper { display: flex; gap: 14px; align-items: center; }
-            .legend { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
-            .legend span { display: inline-flex; align-items: center; gap: 6px; }
-            .legend .dot { width: 12px; height: 12px; border-radius: 4px; display: inline-block; }
-          </style>
-        </head>
-        <body>
-          <h1>Kingfisher Report</h1>
-          <div class="meta">Generated ${escapeHtml(new Date().toLocaleString())} · Scope: ${escapeHtml(scopeLabel)}</div>
+      const pdfHtml = `<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Kingfisher Scan Report</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; padding: 24px; color: #0f172a; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    h2 { font-size: 16px; margin: 20px 0 10px; border-bottom: 2px solid #e5e7eb; padding-bottom: 6px; }
+    .report-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 3px solid #0e7c56; }
+    .report-header h1 { color: #0e7c56; }
+    .report-date { color: #4b5563; font-size: 13px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 18px; }
+    .stat { padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; background: #f8fafc; }
+    .stat .label { font-size: 11px; text-transform: uppercase; color: #6b7280; letter-spacing: 0.04em; font-weight: 600; }
+    .stat .value { font-size: 22px; font-weight: 800; margin-top: 4px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; table-layout: fixed; }
+    th, td { border: 1px solid #d1d5db; padding: 6px 8px; font-size: 11px; text-align: left; word-break: break-word; overflow-wrap: anywhere; }
+    th { background: #f1f5f9; font-weight: 700; color: #374151; }
+    .section { margin-bottom: 24px; page-break-inside: avoid; }
+    .chart-wrapper { display: flex; gap: 14px; align-items: center; margin-top: 12px; }
+    .legend { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .legend .dot { width: 12px; height: 12px; border-radius: 4px; display: inline-block; }
+    @media print { body { padding: 12px; } .no-print { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="report-header">
+    <h1>Kingfisher Scan Report</h1>
+    <div class="report-date">${escapeHtml(new Date().toLocaleString())}<br>Scope: ${escapeHtml(scopeLabel)}</div>
+  </div>
 
-          <div class="section">
-            <h2>Dashboard</h2>
-            <div class="grid">
-              <div class="stat"><div class="label">Total Findings</div><div class="value">${baseFindings.length}</div></div>
-              <div class="stat"><div class="label">High Confidence</div><div class="value">${highConfidence}</div></div>
-              <div class="stat"><div class="label">Active Credentials</div><div class="value">${counts.active || 0}</div></div>
-              <div class="stat"><div class="label">Identities Mapped</div><div class="value">${accessMap.length}</div></div>
-            </div>
-            <div class="chart-wrapper">
-              ${statusImage ? `<img src="${statusImage}" alt="Status chart" style="max-width:280px; border:1px solid #d1d5db; border-radius:10px;">` : ""}
-              <div class="legend">
-                <span><span class="dot" style="background:#22c55e"></span> Active: ${counts.active || 0}</span>
-                <span><span class="dot" style="background:#f97316"></span> Inactive: ${counts.inactive || 0}</span>
-                <span><span class="dot" style="background:#38bdf8"></span> Not Attempted: ${counts.not_attempted || 0}</span>
-                <span><span class="dot" style="background:#9ca3af"></span> Unknown: ${counts.unknown || 0}</span>
-              </div>
-            </div>
-          </div>
+  ${metaHtml}
+  ${execSummary}
 
-          <div class="section">
-            <h2>${escapeHtml(scope === "filtered" ? "Findings (Filtered, Active first)" : "Findings (Active first)")}</h2>
-            <table>
-              <thead>
-                <tr>
-                  <th>Rule</th>
-                  <th>Finding ID</th>
-                  <th>File Path</th>
-                  <th>Status</th>
-                  <th>Line</th>
-                  <th>Git URL</th>
-                  <th>Snippet</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${findingsHtml}
-              </tbody>
-            </table>
-          </div>
+  <div class="section">
+    <h2>Summary</h2>
+    <div class="grid">
+      <div class="stat"><div class="label">Total Findings</div><div class="value">${baseFindings.length}</div></div>
+      <div class="stat"><div class="label">High Confidence</div><div class="value">${highConfidence}</div></div>
+      <div class="stat"><div class="label">Active</div><div class="value" style="color:#dc2626;">${counts.active || 0}</div></div>
+      <div class="stat"><div class="label">Inactive</div><div class="value" style="color:#f97316;">${counts.inactive || 0}</div></div>
+      <div class="stat"><div class="label">Not Validated</div><div class="value">${counts.not_attempted || 0}</div></div>
+      <div class="stat"><div class="label">Identities</div><div class="value">${(accessMap || []).length}</div></div>
+    </div>
+    <div class="chart-wrapper">
+      ${statusImage ? `<img src="${statusImage}" alt="Status chart" style="max-width:240px; border:1px solid #d1d5db; border-radius:10px;">` : ""}
+      <div class="legend">
+        <span><span class="dot" style="background:#22c55e"></span> Active: ${counts.active || 0}</span>
+        <span><span class="dot" style="background:#f97316"></span> Inactive: ${counts.inactive || 0}</span>
+        <span><span class="dot" style="background:#38bdf8"></span> Not Attempted: ${counts.not_attempted || 0}</span>
+        <span><span class="dot" style="background:#9ca3af"></span> Unknown: ${counts.unknown || 0}</span>
+      </div>
+    </div>
+  </div>
 
-        </body>
-        </html>
-      `;
+  ${Object.keys(ruleSummary).length > 1 ? `
+  <div class="section">
+    <h2>Findings by Rule</h2>
+    <table style="max-width:500px;">
+      <thead><tr><th>Rule</th><th>Count</th><th>Active</th></tr></thead>
+      <tbody>${ruleSummaryRows}</tbody>
+    </table>
+  </div>
+  ` : ""}
+
+  <div class="section">
+    <h2>Detailed Findings</h2>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:15%;">Rule</th>
+          <th style="width:10%;">Fingerprint</th>
+          <th style="width:22%;">File Path</th>
+          <th style="width:12%;">Status</th>
+          <th style="width:9%;">Confidence</th>
+          <th style="width:5%;">Line</th>
+          <th style="width:27%;">Git URL</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${findingsHtml}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="no-print" style="margin-top:24px;text-align:center;">
+    <button onclick="window.print()" style="padding:10px 24px;font-size:14px;font-weight:600;background:#0e7c56;color:#fff;border:none;border-radius:8px;cursor:pointer;">
+      Print / Save as PDF
+    </button>
+  </div>
+</body>
+</html>`;
 
       const win = window.open("", "_blank", "width=1200,height=900");
       if (!win) {
-        alert("Please allow pop-ups to download the Findings report.");
+        alert("Please allow pop-ups to view the Scan report.");
         return;
       }
       win.document.write(pdfHtml);
@@ -2283,49 +2702,168 @@
     }
 
     function generateAccessMapReport() {
-      if (!rawData) {
-        alert("Load a report before downloading an Access Map report.");
+      if (!Array.isArray(accessMap) || accessMap.length === 0) {
+        alert("No Access Map entries are available. Run a scan with --access-map first.");
         return;
       }
 
-      const accessListHtml = buildAccessMapListHtml({ includeMeta: true });
-      if (!accessListHtml) {
-        alert("No Access Map entries are available for this report.");
-        return;
-      }
+      // Compute stats
+      let totalResources = 0;
+      let totalPermissions = 0;
+      const allPermSet = new Set();
+      const providerCounts = {};
+      accessMap.forEach((entry) => {
+        const prov = (entry.provider || "unknown").toUpperCase();
+        providerCounts[prov] = (providerCounts[prov] || 0) + 1;
+        (entry.groups || []).forEach((g) => {
+          totalResources += (g.resources || []).length;
+          (g.permissions || []).forEach((p) => allPermSet.add(p));
+        });
+      });
+      totalPermissions = allPermSet.size;
 
-      const pdfHtml = `
-        <!doctype html>
-        <html>
-        <head>
-          <meta charset="UTF-8">
-          <title>Kingfisher Access Map Report</title>
-          <style>
-            * { box-sizing: border-box; }
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 16px; color: #0f172a; }
-            h1, h2 { margin: 0 0 12px; }
-            .meta { color: #4b5563; font-size: 13px; margin-bottom: 14px; }
-            .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #e0f2fe; color: #075985; font-weight: 700; font-size: 12px; margin-left: 8px; }
-            .access-list { list-style: none; padding-left: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
-            .access-entry { border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; background: #f8fafc; }
-            .access-head { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
-            .access-groups { margin: 0; padding-left: 16px; color: #1f2937; }
-          </style>
-        </head>
-        <body>
-          <h1>Kingfisher Access Map Report</h1>
-          <div class="meta">Generated ${escapeHtml(new Date().toLocaleString())}</div>
-          <div class="section">
-            <h2>Access Map</h2>
-            <ul class="access-list">${accessListHtml}</ul>
+      // Build per-identity cards
+      const identityCards = accessMap.map((entry, idx) => {
+        const groups = Array.isArray(entry.groups) ? entry.groups : [];
+        const findingId = getFindingIdFromAccessEntry(entry);
+        const tokenName = getTokenNameFromAccessEntry(entry);
+        const userId = getUserIdFromAccessEntry(entry);
+        const provider = (entry.provider || "Unknown").toUpperCase();
+
+        // Token details
+        let tokenHtml = "";
+        if (entry.token_details) {
+          const td = entry.token_details;
+          const fields = [];
+          if (td.username) fields.push(["Username", td.username]);
+          if (td.token_type) fields.push(["Token Type", td.token_type]);
+          if (td.account_type) fields.push(["Account Type", td.account_type]);
+          if (td.name) fields.push(["Token Name", td.name]);
+          if (td.email) fields.push(["Email", td.email]);
+          if (td.created_at) fields.push(["Created", td.created_at]);
+          if (td.expires_at) fields.push(["Expires", td.expires_at]);
+          if (td.last_used_at) fields.push(["Last Used", td.last_used_at]);
+          if (Array.isArray(td.scopes) && td.scopes.length) fields.push(["Scopes", td.scopes.join(", ")]);
+          if (fields.length) {
+            tokenHtml = `<div style="margin-top:10px;padding:10px 14px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;">
+              <div style="font-weight:700;font-size:12px;margin-bottom:6px;color:#0369a1;">Token Details</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;font-size:12px;">
+                ${fields.map(([k, v]) => `<div><strong style="color:#475569;">${escapeHtml(k)}:</strong> ${escapeHtml(String(v))}</div>`).join("")}
+              </div>
+            </div>`;
+          }
+        }
+
+        // Resource groups
+        const groupsHtml = groups.map((g) => {
+          const resources = g.resources || [];
+          const perms = g.permissions || [];
+          const resRows = resources.length
+            ? resources.map((r) => `<div style="padding:4px 8px;background:#fff;border:1px solid #e5e7eb;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;word-break:break-all;">${escapeHtml(String(r))}</div>`).join("")
+            : '<div style="color:#9ca3af;font-size:12px;font-style:italic;">No specific resources</div>';
+          const permTags = perms.length
+            ? perms.map((p) => `<span style="display:inline-block;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600;background:#ecfdf5;color:#16a34a;border:1px solid #bbf7d0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(p)}</span>`).join(" ")
+            : '<span style="color:#9ca3af;font-size:12px;font-style:italic;">No specific permissions</span>';
+          return `<div style="margin-top:10px;">
+            <div style="font-weight:600;font-size:12px;color:#374151;margin-bottom:6px;">Resources (${resources.length})</div>
+            <div style="display:flex;flex-direction:column;gap:4px;">${resRows}</div>
+            <div style="font-weight:600;font-size:12px;color:#374151;margin:10px 0 6px;">Permissions (${perms.length})</div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;">${permTags}</div>
+          </div>`;
+        }).join("");
+
+        // Meta line
+        const metaParts = [];
+        if (findingId) metaParts.push(`<strong>Fingerprint:</strong> <code style="font-size:10px;">${escapeHtml(findingId.substring(0, 16))}</code>`);
+        if (tokenName) metaParts.push(`<strong>Token:</strong> ${escapeHtml(tokenName)}`);
+        if (userId) metaParts.push(`<strong>User:</strong> ${escapeHtml(userId)}`);
+        const metaLine = metaParts.length
+          ? `<div style="font-size:12px;color:#64748b;margin-top:6px;">${metaParts.join(" · ")}</div>`
+          : "";
+
+        return `<div style="page-break-inside:avoid;border:1px solid #d1d5db;border-radius:8px;padding:16px;margin-bottom:12px;background:#fff;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+            <span style="font-size:16px;">👤</span>
+            <div>
+              <div style="font-size:15px;font-weight:700;">${escapeHtml(entry.account || "(identity)")}</div>
+              <span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;background:#e0f2fe;color:#075985;margin-top:2px;">${escapeHtml(provider)}</span>
+            </div>
           </div>
-        </body>
-        </html>
-      `;
+          ${metaLine}
+          ${tokenHtml}
+          ${groupsHtml}
+        </div>`;
+      }).join("");
+
+      // Provider summary
+      const providerSummaryRows = Object.entries(providerCounts)
+        .sort((a, b) => b[1] - a[1])
+        .map(([p, c]) => `<tr><td>${escapeHtml(p)}</td><td>${c}</td></tr>`)
+        .join("");
+
+      const pdfHtml = `<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Kingfisher Access Map Report</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; padding: 24px; color: #0f172a; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    h2 { font-size: 16px; margin: 20px 0 10px; border-bottom: 2px solid #e5e7eb; padding-bottom: 6px; }
+    .report-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 3px solid #0e7c56; }
+    .report-header h1 { color: #0e7c56; }
+    .report-date { color: #4b5563; font-size: 13px; text-align: right; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 18px; }
+    .stat { padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; background: #f8fafc; }
+    .stat .label { font-size: 11px; text-transform: uppercase; color: #6b7280; letter-spacing: 0.04em; font-weight: 600; }
+    .stat .value { font-size: 22px; font-weight: 800; margin-top: 4px; }
+    table { border-collapse: collapse; margin-top: 8px; }
+    th, td { border: 1px solid #d1d5db; padding: 6px 12px; font-size: 12px; text-align: left; }
+    th { background: #f1f5f9; font-weight: 700; color: #374151; }
+    .section { margin-bottom: 24px; }
+    code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+    @media print { body { padding: 12px; } .no-print { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="report-header">
+    <h1>Kingfisher Access Map Report</h1>
+    <div class="report-date">${escapeHtml(new Date().toLocaleString())}</div>
+  </div>
+
+  <div class="section">
+    <h2>Summary</h2>
+    <div class="grid">
+      <div class="stat"><div class="label">Identities</div><div class="value">${accessMap.length}</div></div>
+      <div class="stat"><div class="label">Total Resources</div><div class="value">${totalResources}</div></div>
+      <div class="stat"><div class="label">Unique Permissions</div><div class="value">${totalPermissions}</div></div>
+      <div class="stat"><div class="label">Providers</div><div class="value">${Object.keys(providerCounts).length}</div></div>
+    </div>
+    ${Object.keys(providerCounts).length > 1 ? `
+    <table>
+      <thead><tr><th>Provider</th><th>Identities</th></tr></thead>
+      <tbody>${providerSummaryRows}</tbody>
+    </table>
+    ` : ""}
+  </div>
+
+  <div class="section">
+    <h2>Identities &amp; Access</h2>
+    ${identityCards}
+  </div>
+
+  <div class="no-print" style="margin-top:24px;text-align:center;">
+    <button onclick="window.print()" style="padding:10px 24px;font-size:14px;font-weight:600;background:#0e7c56;color:#fff;border:none;border-radius:8px;cursor:pointer;">
+      Print / Save as PDF
+    </button>
+  </div>
+</body>
+</html>`;
 
       const win = window.open("", "_blank", "width=1200,height=900");
       if (!win) {
-        alert("Please allow pop-ups to download the Access Map report.");
+        alert("Please allow pop-ups to view the Access Map report.");
         return;
       }
       win.document.write(pdfHtml);
@@ -2573,6 +3111,10 @@
         revokeBox.classList.add("hidden");
         revokeCmd.textContent = "";
       }
+
+      // Blast radius
+      currentDetailFinding = f;
+      renderBlastRadius(f);
     }
 
     function getFileUrlFromFinding(finding) {
@@ -2581,6 +3123,546 @@
       const url = fileObj.url || "";
       if (url && /^https?:\/\//i.test(url)) return url;
       return "";
+    }
+
+    function getAccessMapForFingerprint(fingerprint) {
+      if (!fingerprint || !Array.isArray(accessMap)) return [];
+      return accessMap.filter((entry) => entry.fingerprint === fingerprint);
+    }
+
+    function countResources(entries) {
+      let total = 0;
+      entries.forEach((entry) => {
+        (entry.groups || []).forEach((group) => {
+          total += (group.resources || []).length;
+        });
+      });
+      return total;
+    }
+
+    function countPermissions(entries) {
+      const permSet = new Set();
+      entries.forEach((entry) => {
+        (entry.groups || []).forEach((group) => {
+          (group.permissions || []).forEach((p) => permSet.add(p));
+        });
+      });
+      return permSet.size;
+    }
+
+    function generateRiskRationale(finding, accessEntries) {
+      const rule = finding.rule || {};
+      const fd = finding.finding || {};
+      const statusRaw = fd.validation && fd.validation.status ? String(fd.validation.status) : "";
+      const normalizedStatus = normalizeValidationStatus(statusRaw);
+      const isActive = normalizedStatus === "active";
+
+      if (!accessEntries || accessEntries.length === 0) {
+        if (isActive) {
+          return {
+            level: "medium",
+            text: `This is an active ${escapeHtml(rule.name || "credential")} found in ${escapeHtml(fd.path || "the codebase")}. No access map data is available, but the credential validated successfully, indicating it grants live access to the target service.`,
+          };
+        }
+        return {
+          level: "none",
+          text: "No access map data is linked to this finding. Run a scan with --access-map to map the blast radius of validated credentials.",
+        };
+      }
+
+      const providers = [...new Set(accessEntries.map((e) => (e.provider || "").toUpperCase()).filter(Boolean))];
+      const resourceCount = countResources(accessEntries);
+      const permCount = countPermissions(accessEntries);
+      const identityCount = accessEntries.length;
+
+      // Categorize resources
+      const resourceTypes = {};
+      accessEntries.forEach((entry) => {
+        (entry.groups || []).forEach((group) => {
+          (group.resources || []).forEach((r) => {
+            const rStr = String(r);
+            let type = "resource";
+            if (/s3|bucket|storage|blob/i.test(rStr)) type = "storage bucket";
+            else if (/lambda|function|cloud.run/i.test(rStr)) type = "serverless function";
+            else if (/iam|role|policy/i.test(rStr)) type = "IAM resource";
+            else if (/secret|vault|kms/i.test(rStr)) type = "secret/key";
+            else if (/ec2|instance|vm|compute/i.test(rStr)) type = "compute instance";
+            else if (/dynamodb|database|rds|sql/i.test(rStr)) type = "database";
+            else if (/repo|repository/i.test(rStr)) type = "repository";
+            resourceTypes[type] = (resourceTypes[type] || 0) + 1;
+          });
+        });
+      });
+
+      const typeDescriptions = Object.entries(resourceTypes)
+        .sort((a, b) => b[1] - a[1])
+        .map(([type, count]) => `${count} ${type}${count > 1 ? "s" : ""}`)
+        .join(", ");
+
+      // Determine risk level
+      let level = "low";
+      if (isActive && resourceCount > 10) level = "critical";
+      else if (isActive && resourceCount > 3) level = "high";
+      else if (isActive && resourceCount > 0) level = "medium";
+      else if (!isActive && resourceCount > 0) level = "low";
+
+      // Check for dangerous permissions
+      const allPerms = [];
+      accessEntries.forEach((e) => (e.groups || []).forEach((g) => allPerms.push(...(g.permissions || []))));
+      const dangerousPerms = allPerms.filter((p) =>
+        /admin|full.?control|owner|delete|write.*all|manage|superuser|\*/i.test(p)
+      );
+      if (isActive && dangerousPerms.length > 0) level = "critical";
+
+      // Check for token details with scopes
+      const scopeInfo = [];
+      accessEntries.forEach((entry) => {
+        if (entry.token_details && Array.isArray(entry.token_details.scopes)) {
+          scopeInfo.push(...entry.token_details.scopes);
+        }
+      });
+
+      let text = "";
+      if (isActive) {
+        text = `This active ${escapeHtml(rule.name || "credential")} grants access to <strong>${resourceCount} resource${resourceCount !== 1 ? "s" : ""}</strong> across <strong>${identityCount} identit${identityCount !== 1 ? "ies" : "y"}</strong> on ${providers.join(", ")}.`;
+        if (typeDescriptions) {
+          text += ` Accessible resources include ${typeDescriptions}.`;
+        }
+        if (dangerousPerms.length > 0) {
+          text += ` <strong>Warning:</strong> This credential has elevated privileges including ${dangerousPerms.slice(0, 3).map((p) => "<code>" + escapeHtml(p) + "</code>").join(", ")}${dangerousPerms.length > 3 ? ` and ${dangerousPerms.length - 3} more` : ""}.`;
+        }
+        if (scopeInfo.length > 0) {
+          text += ` Token scopes: ${scopeInfo.slice(0, 5).map((s) => escapeHtml(s)).join(", ")}${scopeInfo.length > 5 ? ` (+${scopeInfo.length - 5} more)` : ""}.`;
+        }
+      } else {
+        text = `This ${escapeHtml(rule.name || "credential")} has access map data showing <strong>${resourceCount} resource${resourceCount !== 1 ? "s" : ""}</strong> that would be accessible if the credential were active.`;
+        if (typeDescriptions) {
+          text += ` Resources include ${typeDescriptions}.`;
+        }
+      }
+
+      return { level, text };
+    }
+
+    function renderBlastRadius(f) {
+      const finding = f.finding || {};
+      const fingerprint = finding.fingerprint || "";
+      const blastSection = document.getElementById("fd-blast-radius");
+      const blastEntries = document.getElementById("fd-blast-entries");
+      const blastCount = document.getElementById("fd-blast-count");
+      const rationaleEl = document.getElementById("fd-risk-rationale");
+
+      const entries = getAccessMapForFingerprint(fingerprint);
+      const { level, text } = generateRiskRationale(f, entries);
+
+      // Always show the blast radius section
+      blastSection.classList.remove("hidden");
+
+      // Risk rationale
+      rationaleEl.className = "risk-rationale " + level;
+      rationaleEl.innerHTML = text;
+
+      // Count
+      const resourceTotal = countResources(entries);
+      blastCount.textContent = entries.length > 0
+        ? `${entries.length} identit${entries.length !== 1 ? "ies" : "y"}, ${resourceTotal} resource${resourceTotal !== 1 ? "s" : ""}`
+        : "No access data";
+
+      // Render entries
+      blastEntries.innerHTML = "";
+      if (entries.length === 0) return;
+
+      entries.forEach((entry) => {
+        const identity = document.createElement("div");
+        identity.className = "blast-identity";
+
+        const header = document.createElement("div");
+        header.className = "blast-identity__header";
+
+        const providerBadge = document.createElement("span");
+        providerBadge.className = "badge " + providerBadgeClass(entry.provider);
+        providerBadge.textContent = (entry.provider || "").toUpperCase();
+        header.appendChild(providerBadge);
+
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = entry.account || "(identity)";
+        header.appendChild(nameSpan);
+
+        // Token info summary
+        if (entry.token_details) {
+          const tokenInfo = document.createElement("span");
+          tokenInfo.style.fontSize = "12px";
+          tokenInfo.style.color = "var(--text-muted)";
+          const parts = [];
+          if (entry.token_details.username) parts.push(entry.token_details.username);
+          if (entry.token_details.token_type) parts.push(entry.token_details.token_type);
+          if (parts.length) tokenInfo.textContent = "(" + parts.join(" · ") + ")";
+          header.appendChild(tokenInfo);
+        }
+
+        identity.appendChild(header);
+
+        const resList = document.createElement("ul");
+        resList.className = "blast-resource-list";
+
+        (entry.groups || []).forEach((group) => {
+          const resources = group.resources || [];
+          const perms = group.permissions || [];
+
+          if (resources.length === 0 && perms.length > 0) {
+            const item = document.createElement("li");
+            item.className = "blast-resource-item";
+            const name = document.createElement("div");
+            name.className = "blast-resource-name";
+            name.textContent = "Project-wide / Unscoped";
+            item.appendChild(name);
+            const permDiv = document.createElement("div");
+            permDiv.className = "blast-perms";
+            perms.forEach((p) => {
+              const tag = document.createElement("span");
+              tag.className = "blast-perm-tag";
+              tag.textContent = p;
+              permDiv.appendChild(tag);
+            });
+            item.appendChild(permDiv);
+            resList.appendChild(item);
+          }
+
+          resources.forEach((resName) => {
+            const item = document.createElement("li");
+            item.className = "blast-resource-item";
+            const name = document.createElement("div");
+            name.className = "blast-resource-name";
+            name.textContent = String(resName);
+
+            // Add console link if available
+            const { resourceType, resourceName } = extractResourceParts(String(resName));
+            const consoleLink = buildResourceConsoleLink(entry.provider, resourceType, resourceName);
+            if (consoleLink) {
+              const a = document.createElement("a");
+              a.href = consoleLink;
+              a.target = "_blank";
+              a.rel = "noopener noreferrer";
+              a.textContent = " (open in console)";
+              a.style.fontSize = "11px";
+              a.style.fontFamily = "inherit";
+              a.style.color = "var(--brand)";
+              name.appendChild(a);
+            }
+
+            item.appendChild(name);
+
+            if (perms.length > 0) {
+              const permDiv = document.createElement("div");
+              permDiv.className = "blast-perms";
+              perms.forEach((p) => {
+                const tag = document.createElement("span");
+                tag.className = "blast-perm-tag";
+                tag.textContent = p;
+                permDiv.appendChild(tag);
+              });
+              item.appendChild(permDiv);
+            }
+            resList.appendChild(item);
+          });
+        });
+
+        identity.appendChild(resList);
+        blastEntries.appendChild(identity);
+      });
+    }
+
+    function exportSingleFindingRiskReport(f) {
+      const rule = f.rule || {};
+      const finding = f.finding || {};
+      const fingerprint = finding.fingerprint || "";
+      const entries = getAccessMapForFingerprint(fingerprint);
+      const { level, text: rationaleText } = generateRiskRationale(f, entries);
+      const statusRaw = finding.validation && finding.validation.status ? String(finding.validation.status) : "Unknown";
+      const gitUrl = getFileUrlFromFinding(finding);
+
+      const levelColors = {
+        critical: { bg: "#fef2f2", border: "#fca5a5", text: "#991b1b" },
+        high: { bg: "#fff7ed", border: "#fdba74", text: "#9a3412" },
+        medium: { bg: "#fffbeb", border: "#fde68a", text: "#92400e" },
+        low: { bg: "#f0fdf4", border: "#bbf7d0", text: "#166534" },
+        none: { bg: "#f8fafc", border: "#e2e8f0", text: "#475569" },
+      };
+      const colors = levelColors[level] || levelColors.none;
+
+      let accessHtml = "";
+      if (entries.length > 0) {
+        accessHtml = entries.map((entry) => {
+          const groups = (entry.groups || []).map((g) => {
+            const resList = (g.resources || []).map((r) => `<li><code>${escapeHtml(String(r))}</code></li>`).join("");
+            const permList = (g.permissions || []).map((p) => `<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:#ecfdf5;color:#16a34a;border:1px solid #bbf7d0;margin:2px;">${escapeHtml(p)}</span>`).join(" ");
+            return `<div style="margin-bottom:12px;">
+              <div style="font-weight:600;margin-bottom:4px;">Resources:</div>
+              <ul style="margin:0;padding-left:20px;">${resList || "<li>No specific resources</li>"}</ul>
+              <div style="font-weight:600;margin:8px 0 4px;">Permissions:</div>
+              <div>${permList || "No specific permissions"}</div>
+            </div>`;
+          }).join("");
+
+          let tokenHtml = "";
+          if (entry.token_details) {
+            const td = entry.token_details;
+            const fields = [];
+            if (td.username) fields.push(["Username", td.username]);
+            if (td.token_type) fields.push(["Token Type", td.token_type]);
+            if (td.account_type) fields.push(["Account Type", td.account_type]);
+            if (td.name) fields.push(["Token Name", td.name]);
+            if (td.email) fields.push(["Email", td.email]);
+            if (td.created_at) fields.push(["Created", td.created_at]);
+            if (td.expires_at) fields.push(["Expires", td.expires_at]);
+            if (td.last_used_at) fields.push(["Last Used", td.last_used_at]);
+            if (Array.isArray(td.scopes) && td.scopes.length) fields.push(["Scopes", td.scopes.join(", ")]);
+            if (fields.length) {
+              tokenHtml = `<div style="margin-top:10px;padding:10px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;">
+                <div style="font-weight:700;font-size:13px;margin-bottom:6px;">Token Details</div>
+                ${fields.map(([k, v]) => `<div style="font-size:12px;"><strong>${escapeHtml(k)}:</strong> ${escapeHtml(String(v))}</div>`).join("")}
+              </div>`;
+            }
+          }
+
+          return `<div style="border:1px solid #d1d5db;border-radius:8px;padding:14px;margin-bottom:10px;background:#f8fafc;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+              <span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700;background:#e0f2fe;color:#075985;">${escapeHtml((entry.provider || "").toUpperCase())}</span>
+              <strong>${escapeHtml(entry.account || "(identity)")}</strong>
+            </div>
+            ${groups}
+            ${tokenHtml}
+          </div>`;
+        }).join("");
+      }
+
+      const reportHtml = `<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Risk Report: ${escapeHtml(rule.name || rule.id || "Finding")}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; padding: 24px; color: #0f172a; max-width: 900px; margin: 0 auto; }
+    h1 { font-size: 22px; margin: 0 0 6px; }
+    h2 { font-size: 17px; margin: 20px 0 10px; border-bottom: 2px solid #e5e7eb; padding-bottom: 6px; }
+    .meta { color: #4b5563; font-size: 13px; margin-bottom: 20px; }
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+    .detail-item { padding: 8px 12px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 6px; }
+    .detail-item label { display: block; font-size: 11px; text-transform: uppercase; color: #6b7280; letter-spacing: 0.04em; font-weight: 600; }
+    .detail-item div { font-size: 14px; font-weight: 500; margin-top: 2px; word-break: break-all; }
+    .snippet { background: #1e293b; color: #e2e8f0; padding: 14px; border-radius: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; margin: 10px 0; }
+    .rationale { padding: 14px 18px; border-radius: 8px; font-size: 14px; line-height: 1.7; margin-bottom: 16px; }
+    code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+    @media print { body { padding: 12px; } .no-print { display: none; } }
+  </style>
+</head>
+<body>
+  <h1>Risk Report: ${escapeHtml(rule.name || rule.id || "")}</h1>
+  <div class="meta">Generated ${escapeHtml(new Date().toLocaleString())} · Fingerprint: ${escapeHtml(fingerprint)}</div>
+
+  <h2>Risk Assessment</h2>
+  <div class="rationale" style="background:${colors.bg};border:1px solid ${colors.border};color:${colors.text};">
+    <strong style="text-transform:uppercase;">${escapeHtml(level)} risk</strong><br>
+    ${rationaleText}
+  </div>
+
+  <h2>Finding Details</h2>
+  <div class="detail-grid">
+    <div class="detail-item"><label>Rule</label><div>${escapeHtml(rule.name || "")} (${escapeHtml(rule.id || "")})</div></div>
+    <div class="detail-item"><label>Validation</label><div>${escapeHtml(statusRaw)}</div></div>
+    <div class="detail-item"><label>Confidence</label><div>${escapeHtml(finding.confidence || "")}</div></div>
+    <div class="detail-item"><label>Entropy</label><div>${finding.entropy != null ? escapeHtml(String(finding.entropy)) : "—"}</div></div>
+    <div class="detail-item" style="grid-column:span 2;"><label>File Path</label><div>${escapeHtml(finding.path || "")}</div></div>
+    ${gitUrl ? `<div class="detail-item" style="grid-column:span 2;"><label>Git URL</label><div><a href="${escapeHtml(gitUrl)}" target="_blank">${escapeHtml(gitUrl)}</a></div></div>` : ""}
+    ${finding.git_metadata && finding.git_metadata.commit ? `<div class="detail-item"><label>Commit</label><div>${escapeHtml(finding.git_metadata.commit.id ? finding.git_metadata.commit.id.substring(0, 8) : "")}</div></div>` : ""}
+    ${finding.git_metadata && finding.git_metadata.commit && finding.git_metadata.commit.committer ? `<div class="detail-item"><label>Committer</label><div>${escapeHtml(finding.git_metadata.commit.committer.email || "")}</div></div>` : ""}
+  </div>
+
+  <div style="font-weight:600;font-size:12px;text-transform:uppercase;color:#6b7280;margin-bottom:6px;">Match Snippet</div>
+  <div class="snippet">${escapeHtml(finding.snippet || "")}</div>
+
+  ${entries.length > 0 ? `
+  <h2>Blast Radius (${entries.length} Identit${entries.length !== 1 ? "ies" : "y"}, ${countResources(entries)} Resource${countResources(entries) !== 1 ? "s" : ""})</h2>
+  ${accessHtml}
+  ` : `
+  <h2>Blast Radius</h2>
+  <p style="color:#6b7280;">No access map data available. Run with <code>--access-map</code> to map credential blast radius.</p>
+  `}
+
+  <div class="no-print" style="margin-top:24px;text-align:center;">
+    <button onclick="window.print()" style="padding:10px 24px;font-size:14px;font-weight:600;background:#0e7c56;color:#fff;border:none;border-radius:8px;cursor:pointer;">
+      Print / Save as PDF
+    </button>
+  </div>
+</body>
+</html>`;
+
+      const win = window.open("", "_blank", "width=1000,height=900");
+      if (!win) {
+        alert("Please allow pop-ups to open the risk report.");
+        return;
+      }
+      win.document.write(reportHtml);
+      win.document.close();
+      win.focus();
+    }
+
+    function generateRiskReport({ activeOnly = false } = {}) {
+      if (!findings || findings.length === 0) {
+        alert("No findings loaded. Load a report first.");
+        return;
+      }
+
+      let pool = findings.slice();
+      if (activeOnly) {
+        pool = pool.filter((f) => {
+          const fd = f.finding || {};
+          return normalizeValidationStatus(fd.validation && fd.validation.status ? fd.validation.status : "") === "active";
+        });
+        if (pool.length === 0) {
+          alert("No active credentials found. Uncheck 'Active credentials only' to include all findings.");
+          return;
+        }
+      }
+
+      // Sort: active first, then by rule name
+      const statusOrder = { active: 0, inactive: 1, not_attempted: 2, unknown: 3 };
+      const sorted = pool.sort((a, b) => {
+        const fa = a.finding || {};
+        const fb = b.finding || {};
+        const keyA = normalizeValidationStatus(fa.validation && fa.validation.status ? fa.validation.status : "");
+        const keyB = normalizeValidationStatus(fb.validation && fb.validation.status ? fb.validation.status : "");
+        const sa = statusOrder.hasOwnProperty(keyA) ? statusOrder[keyA] : 4;
+        const sb = statusOrder.hasOwnProperty(keyB) ? statusOrder[keyB] : 4;
+        if (sa !== sb) return sa - sb;
+        const ra = (a.rule && (a.rule.name || a.rule.id)) || "";
+        const rb = (b.rule && (b.rule.name || b.rule.id)) || "";
+        return ra.localeCompare(rb);
+      });
+
+      const counts = calculateValidationCounts(sorted);
+      const riskScopeLabel = activeOnly ? "Active credentials only" : "All findings";
+      const findingsWithAccess = sorted.filter((f) => {
+        const fp = f.finding && f.finding.fingerprint ? f.finding.fingerprint : "";
+        return getAccessMapForFingerprint(fp).length > 0;
+      });
+
+      const levelColors = {
+        critical: { bg: "#fef2f2", border: "#fca5a5", text: "#991b1b" },
+        high: { bg: "#fff7ed", border: "#fdba74", text: "#9a3412" },
+        medium: { bg: "#fffbeb", border: "#fde68a", text: "#92400e" },
+        low: { bg: "#f0fdf4", border: "#bbf7d0", text: "#166534" },
+        none: { bg: "#f8fafc", border: "#e2e8f0", text: "#475569" },
+      };
+
+      let findingSections = "";
+      sorted.forEach((f, idx) => {
+        const rule = f.rule || {};
+        const finding = f.finding || {};
+        const fp = finding.fingerprint || "";
+        const entries = getAccessMapForFingerprint(fp);
+        const { level, text: rationaleText } = generateRiskRationale(f, entries);
+        const colors = levelColors[level] || levelColors.none;
+        const statusRaw = finding.validation && finding.validation.status ? String(finding.validation.status) : "Unknown";
+        const gitUrl = getFileUrlFromFinding(finding);
+
+        let accessSummary = "";
+        if (entries.length > 0) {
+          const resCount = countResources(entries);
+          const permCount = countPermissions(entries);
+          accessSummary = entries.map((entry) => {
+            const resources = [];
+            (entry.groups || []).forEach((g) => {
+              (g.resources || []).forEach((r) => resources.push(String(r)));
+            });
+            const perms = [];
+            (entry.groups || []).forEach((g) => (g.permissions || []).forEach((p) => perms.push(p)));
+            const uniquePerms = [...new Set(perms)];
+            return `<div style="margin:8px 0;padding:10px;border:1px solid #e5e7eb;border-radius:6px;background:#f8fafc;">
+              <div style="font-weight:700;font-size:13px;margin-bottom:6px;">
+                <span style="display:inline-block;padding:1px 6px;border-radius:999px;font-size:11px;background:#e0f2fe;color:#075985;margin-right:6px;">${escapeHtml((entry.provider || "").toUpperCase())}</span>
+                ${escapeHtml(entry.account || "")}
+              </div>
+              ${resources.length ? `<div style="font-size:12px;"><strong>Resources (${resources.length}):</strong> ${resources.slice(0, 8).map((r) => "<code>" + escapeHtml(r) + "</code>").join(", ")}${resources.length > 8 ? ` +${resources.length - 8} more` : ""}</div>` : ""}
+              ${uniquePerms.length ? `<div style="font-size:12px;margin-top:4px;"><strong>Permissions (${uniquePerms.length}):</strong> ${uniquePerms.slice(0, 6).map((p) => escapeHtml(p)).join(", ")}${uniquePerms.length > 6 ? ` +${uniquePerms.length - 6} more` : ""}</div>` : ""}
+            </div>`;
+          }).join("");
+        }
+
+        findingSections += `
+          <div style="page-break-inside:avoid;border:1px solid #d1d5db;border-radius:8px;padding:16px;margin-bottom:16px;background:#fff;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+              <div style="font-size:16px;font-weight:700;">${idx + 1}. ${escapeHtml(rule.name || rule.id || "Unknown Rule")}</div>
+              <span style="display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;text-transform:uppercase;background:${colors.bg};border:1px solid ${colors.border};color:${colors.text};">${escapeHtml(level)}</span>
+            </div>
+            <div style="padding:10px 14px;border-radius:6px;background:${colors.bg};border:1px solid ${colors.border};color:${colors.text};font-size:13px;line-height:1.6;margin-bottom:12px;">
+              ${rationaleText}
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;margin-bottom:10px;">
+              <div><strong>Path:</strong> ${escapeHtml(finding.path || "—")}</div>
+              <div><strong>Line:</strong> ${finding.line != null ? finding.line : "—"}</div>
+              <div><strong>Validation:</strong> ${escapeHtml(statusRaw)}</div>
+              <div><strong>Confidence:</strong> ${escapeHtml(finding.confidence || "—")}</div>
+              ${gitUrl ? `<div style="grid-column:span 2;"><strong>URL:</strong> <a href="${escapeHtml(gitUrl)}" style="color:#1d4ed8;">${escapeHtml(gitUrl)}</a></div>` : ""}
+            </div>
+            <div style="background:#1e293b;color:#e2e8f0;padding:10px;border-radius:6px;font-family:monospace;font-size:11px;white-space:pre-wrap;word-break:break-all;margin-bottom:10px;">${escapeHtml((finding.snippet || "").substring(0, 300))}</div>
+            ${accessSummary ? `<div style="margin-top:8px;"><div style="font-weight:700;font-size:13px;margin-bottom:6px;">Blast Radius</div>${accessSummary}</div>` : ""}
+          </div>`;
+      });
+
+      const reportHtml = `<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Kingfisher Risk Report</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; padding: 24px; color: #0f172a; }
+    h1 { font-size: 24px; margin: 0 0 4px; }
+    h2 { font-size: 18px; margin: 24px 0 12px; }
+    .meta { color: #4b5563; font-size: 13px; margin-bottom: 20px; }
+    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 20px; }
+    .summary-stat { padding: 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f8fafc; }
+    .summary-stat .label { font-size: 11px; text-transform: uppercase; color: #6b7280; letter-spacing: 0.04em; font-weight: 600; }
+    .summary-stat .value { font-size: 24px; font-weight: 800; margin-top: 4px; }
+    code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+    @media print { body { padding: 12px; font-size: 11px; } .no-print { display: none; } }
+  </style>
+</head>
+<body>
+  <h1>Kingfisher Risk Report</h1>
+  <div class="meta">
+    Generated ${escapeHtml(new Date().toLocaleString())} ·
+    Scope: ${escapeHtml(riskScopeLabel)} ·
+    ${sorted.length} finding${sorted.length !== 1 ? "s" : ""} ·
+    ${findingsWithAccess.length} with access map data
+  </div>
+
+  <div class="summary-grid">
+    <div class="summary-stat"><div class="label">Total Findings</div><div class="value">${sorted.length}</div></div>
+    <div class="summary-stat"><div class="label">Active Credentials</div><div class="value" style="color:#dc2626;">${counts.active || 0}</div></div>
+    <div class="summary-stat"><div class="label">With Blast Radius</div><div class="value">${findingsWithAccess.length}</div></div>
+    <div class="summary-stat"><div class="label">Identities Mapped</div><div class="value">${(accessMap || []).length}</div></div>
+  </div>
+
+  <h2>Findings by Risk</h2>
+  ${findingSections}
+
+  <div class="no-print" style="margin-top:24px;text-align:center;">
+    <button onclick="window.print()" style="padding:10px 24px;font-size:14px;font-weight:600;background:#0e7c56;color:#fff;border:none;border-radius:8px;cursor:pointer;">Print / Save as PDF</button>
+  </div>
+</body>
+</html>`;
+
+      const win = window.open("", "_blank", "width=1100,height=900");
+      if (!win) {
+        alert("Please allow pop-ups to view the risk report.");
+        return;
+      }
+      win.document.write(reportHtml);
+      win.document.close();
+      win.focus();
     }
 
     function renderAccessMapTree(filter = "") {
