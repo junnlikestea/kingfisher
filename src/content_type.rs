@@ -6,8 +6,8 @@ use tokei::LanguageType;
 // Sort longest-first so more specific shebangs win.
 static SHEBANG_PREFIXES: Lazy<Vec<(&'static [u8], LanguageType)>> = Lazy::new(|| {
     let mut v = Vec::new();
-    for &lang in LanguageType::list() {
-        for &sb in lang.shebangs() {
+    for &(lang, shebangs) in LanguageType::list() {
+        for &sb in shebangs {
             v.push((sb.as_bytes(), lang));
         }
     }

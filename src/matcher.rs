@@ -370,8 +370,7 @@ impl<'a> Matcher<'a> {
             && blob_len <= TREE_SITTER_MAX_LIMIT
             && blob_len >= TREE_SITTER_MIN_LIMIT
             && has_raw_matches
-            && lang_hint.is_some()
-            && !no_base64; //tree-sitter parsing is turned off when base64 scanning is disabled
+            && lang_hint.is_some();
 
         let tree_sitter_result = if should_run_tree_sitter {
             lang_hint.and_then(|lang_str| {
@@ -396,7 +395,6 @@ impl<'a> Matcher<'a> {
         let owned_ts_results = tree_sitter_result.map(|ts_results| {
             ts_results
                 .into_iter()
-                .filter(|match_result| match_result.is_base64_decoded)
                 .map(|match_result| {
                     (
                         match_result.range,
@@ -440,32 +438,65 @@ impl<'a> Matcher<'a> {
                 &self.inline_ignore_config,
             );
         }
-        // If tree-sitter produced base64-decoded matches, try them against all rules
+        // Pre-filter tree-sitter extracted key-value pairs through Vectorscan,
+        // then only run the anchored regex for rules that Vectorscan flags as candidates.
         if let Some(ref ts_results) = owned_ts_results {
-            for (ts_range, ts_match, is_base64_decoded, _original_base64) in ts_results.iter() {
-                if *is_base64_decoded {
-                    for (rule_id_usize, rule) in rules_db.rules().iter().enumerate() {
-                        let re = &rules_db.anchored_regexes()[rule_id_usize];
-                        filter_match(
-                            blob,
-                            rule.clone(),
-                            re,
-                            ts_range.start,
-                            ts_range.end,
-                            &mut matches,
-                            &mut previous_matches,
-                            rule_id_usize,
-                            &mut seen_matches,
-                            origin,
-                            Some(ts_match.as_bytes()),
-                            *is_base64_decoded,
-                            redact,
-                            &filename,
-                            self.profiler.as_ref(),
-                            self.respect_ignore_if_contains,
-                            &self.inline_ignore_config,
-                        );
+            if !ts_results.is_empty() {
+                // Build a combined buffer of all tree-sitter texts separated by newlines
+                // so we can run a single Vectorscan pass instead of one per result.
+                let mut combined_buf = Vec::new();
+                let mut segment_ends: Vec<usize> = Vec::with_capacity(ts_results.len());
+                for (_ts_range, ts_match, _is_base64_decoded, _original_base64) in ts_results.iter()
+                {
+                    combined_buf.extend_from_slice(ts_match.as_bytes());
+                    segment_ends.push(combined_buf.len());
+                    combined_buf.push(b'\n');
+                }
+
+                // Single Vectorscan pass over the combined buffer
+                let mut ts_raw_matches: Vec<(u32, u64)> = Vec::new();
+                self.scanner_pool.with(|scanner| {
+                    scanner.scan(&combined_buf, |rule_id, _from, to, _flags| {
+                        ts_raw_matches.push((rule_id, to));
+                        vectorscan_rs::Scan::Continue
+                    })
+                })?;
+
+                // Map each Vectorscan hit back to its tree-sitter result and dedup
+                let mut rule_ts_pairs: FxHashSet<(usize, usize)> = FxHashSet::default();
+                for &(rule_id, to) in &ts_raw_matches {
+                    let to = to as usize;
+                    let seg_idx = segment_ends.partition_point(|&end| end < to);
+                    if seg_idx < ts_results.len() {
+                        rule_ts_pairs.insert((rule_id as usize, seg_idx));
                     }
+                }
+
+                // Only run the anchored regex for (rule, ts_result) pairs Vectorscan flagged
+                for (rule_id_usize, ts_idx) in rule_ts_pairs {
+                    let (ts_range, ts_match, is_base64_decoded, _original_base64) =
+                        &ts_results[ts_idx];
+                    let rule = Arc::clone(&rules_db.rules()[rule_id_usize]);
+                    let re = &rules_db.anchored_regexes()[rule_id_usize];
+                    filter_match(
+                        blob,
+                        rule,
+                        re,
+                        ts_range.start,
+                        ts_range.end,
+                        &mut matches,
+                        &mut previous_matches,
+                        rule_id_usize,
+                        &mut seen_matches,
+                        origin,
+                        Some(ts_match.as_bytes()),
+                        *is_base64_decoded,
+                        redact,
+                        &filename,
+                        self.profiler.as_ref(),
+                        self.respect_ignore_if_contains,
+                        &self.inline_ignore_config,
+                    );
                 }
             }
         }

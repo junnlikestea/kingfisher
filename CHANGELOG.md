@@ -3,6 +3,7 @@
 All notable changes to this project will be documented in this file.
 
 ## [v1.83.0]
+- Improved tree-sitter parsing + structured secret detection in source files. A Vectorscan pre-filter over the combined tree-sitter output avoids the O(results × rules) regex cost.
 - Access Map: added Hugging Face, Gitea, Bitbucket, PostgreSQL, and MongoDB providers. All perform read-only enumeration with severity classification.
 - Access Map: Hugging Face, Bitbucket, Postgres, and MongoDB credentials from scans are now auto-collected when using `--access-map`.
 - Access Map CLI: added providers `huggingface`/`hf`, `gitea`, `bitbucket`, `postgres`, `mongodb`/`mongo`.

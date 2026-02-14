@@ -385,10 +385,21 @@ mod tests {
 
     #[test]
     fn test_git_new() {
-        let git = Git::new(false);
-        assert!(!git.ignore_certs);
-        assert!(git.credentials.is_empty());
-        assert!(git.bitbucket_access_token.is_none());
+        temp_env::with_vars(
+            &[
+                ("KF_GITHUB_TOKEN", None::<&str>),
+                ("KF_BITBUCKET_OAUTH_TOKEN", None::<&str>),
+                ("KF_BITBUCKET_ACCESS_TOKEN", None::<&str>),
+                ("KF_BITBUCKET_USERNAME", None::<&str>),
+                ("KF_BITBUCKET_APP_PASSWORD", None::<&str>),
+            ],
+            || {
+                let git = Git::new(false);
+                assert!(!git.ignore_certs);
+                assert!(git.credentials.is_empty());
+                assert!(git.bitbucket_access_token.is_none());
+            },
+        );
 
         temp_env::with_var("KF_GITHUB_TOKEN", Some("test_token"), || {
             let git = Git::new(false);
