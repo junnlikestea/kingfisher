@@ -9,6 +9,11 @@ All notable changes to this project will be documented in this file.
 - Added `kingfisher.gitea.1` rule for Gitea access tokens with validation; self-revocation not supported (API requires Basic Auth).
 - Added revocation for GitHub App Server-to-Server tokens (`ghs_`, `kingfisher.github.5`) via `DELETE /installation/token`. Note: `ghu_` (user-to-server) tokens cannot be self-revoked; they require the GitHub App's client credentials or manual revocation via GitHub Settings.
 - Fixed GitHub Access Map failing for all token types due to `GitHubUser` struct field mismatch (`_id` vs API `"id"`).
+- Viewer: replaced the Access Map tree view with a card-based layout showing identity, resource count, permission tags, and token details at a glance with expandable inline detail.
+- Viewer: added per-finding Blast Radius section linking findings to their access map entries with an auto-generated risk rationale (critical/high/medium/low) based on credential status, resource count, and permission severity.
+- Viewer: added two new report types — Risk Report (findings + blast radius per credential, for researchers/bug bounty) and Scan Report (executive summary + scan metadata + findings table, for defenders/tickets). Both support "Active credentials only" filtering.
+- Viewer: redesigned the Access Map export report to match the Scan/Risk report quality with summary stats, per-identity cards, token details, and resource/permission grids.
+- Viewer: added scan metadata bar (timestamp, target, duration, version) to the Dashboard view.
 
 ## [v1.82.0]
 - Added Vercel credential rules for new token formats introduced February 2026: `vcp_` (personal access), `vci_` (integration), `vca_` (app access), `vcr_` (app refresh), `vck_` (AI Gateway API key). All use CRC32/Base62 checksum validation. Legacy 24-char format retained as `kingfisher.vercel.1`.
