@@ -7,11 +7,32 @@ use crate::cli::commands::access_map::{AccessMapArgs, AccessMapProvider};
 mod aws;
 mod azure;
 mod azure_devops;
+mod bitbucket;
 mod gcp;
+mod gitea;
 mod github;
 mod gitlab;
+mod huggingface;
+pub(crate) mod mongodb;
+pub(crate) mod postgres;
 mod report;
 mod slack;
+
+/// Trait for access map providers that map a single token to an access profile.
+///
+/// This covers the majority of providers (GitHub, GitLab, Slack, HuggingFace,
+/// Gitea, Bitbucket). Providers with more complex credentials (AWS, GCP, Azure,
+/// Postgres, MongoDB) use their own custom interfaces.
+pub trait TokenAccessMapper: Send + Sync {
+    /// The cloud/platform name for results (e.g., `"github"`, `"slack"`).
+    fn cloud_name(&self) -> &'static str;
+
+    /// Maps a single token to an access map result.
+    fn map_access_from_token(
+        &self,
+        token: &str,
+    ) -> impl std::future::Future<Output = Result<AccessMapResult>> + Send;
+}
 
 /// Run the identity mapping workflow for the selected cloud provider.
 pub async fn run(args: AccessMapArgs) -> Result<()> {
@@ -22,6 +43,11 @@ pub async fn run(args: AccessMapArgs) -> Result<()> {
         AccessMapProvider::Github => github::map_access(&args).await?,
         AccessMapProvider::Gitlab => gitlab::map_access(&args).await?,
         AccessMapProvider::Slack => slack::map_access(&args).await?,
+        AccessMapProvider::Postgres => postgres::map_access(&args).await?,
+        AccessMapProvider::Mongodb => mongodb::map_access(&args).await?,
+        AccessMapProvider::Huggingface => huggingface::map_access(&args).await?,
+        AccessMapProvider::Gitea => gitea::map_access(&args).await?,
+        AccessMapProvider::Bitbucket => bitbucket::map_access(&args).await?,
     };
 
     let json = serde_json::to_string_pretty(&result)?;
@@ -60,6 +86,16 @@ pub enum AccessMapRequest {
     Gitlab { token: String, fingerprint: String },
     /// A Slack token.
     Slack { token: String, fingerprint: String },
+    /// A Postgres connection URI.
+    Postgres { uri: String, fingerprint: String },
+    /// A MongoDB connection URI.
+    MongoDB { uri: String, fingerprint: String },
+    /// A Hugging Face token.
+    HuggingFace { token: String, fingerprint: String },
+    /// A Gitea token.
+    Gitea { token: String, fingerprint: String },
+    /// A Bitbucket token.
+    Bitbucket { token: String, fingerprint: String },
 }
 
 /// Structured output describing the resolved identity and its risk profile.
@@ -224,24 +260,36 @@ pub async fn map_requests(requests: Vec<AccessMapRequest>) -> Vec<AccessMapResul
                     .unwrap_or_else(|err| build_failed_result("azure_devops", "pat", err)),
                 fingerprint,
             ),
-            AccessMapRequest::Github { token, fingerprint } => (
-                github::map_access_from_token(&token)
+            AccessMapRequest::Github { token, fingerprint } => {
+                (map_token(&GithubMapper, &token).await, fingerprint)
+            }
+            AccessMapRequest::Gitlab { token, fingerprint } => {
+                (map_token(&GitlabMapper, &token).await, fingerprint)
+            }
+            AccessMapRequest::Slack { token, fingerprint } => {
+                (map_token(&SlackMapper, &token).await, fingerprint)
+            }
+            AccessMapRequest::Postgres { uri, fingerprint } => (
+                postgres::map_access_from_uri(&uri)
                     .await
-                    .unwrap_or_else(|err| build_failed_result("github", "token", err)),
+                    .unwrap_or_else(|err| build_failed_result("postgres", "uri", err)),
                 fingerprint,
             ),
-            AccessMapRequest::Gitlab { token, fingerprint } => (
-                gitlab::map_access_from_token(&token)
+            AccessMapRequest::MongoDB { uri, fingerprint } => (
+                mongodb::map_access_from_uri(&uri)
                     .await
-                    .unwrap_or_else(|err| build_failed_result("gitlab", "token", err)),
+                    .unwrap_or_else(|err| build_failed_result("mongodb", "uri", err)),
                 fingerprint,
             ),
-            AccessMapRequest::Slack { token, fingerprint } => (
-                slack::map_access_from_token(&token)
-                    .await
-                    .unwrap_or_else(|err| build_failed_result("slack", "token", err)),
-                fingerprint,
-            ),
+            AccessMapRequest::HuggingFace { token, fingerprint } => {
+                (map_token(&HuggingFaceMapper, &token).await, fingerprint)
+            }
+            AccessMapRequest::Gitea { token, fingerprint } => {
+                (map_token(&GiteaMapper, &token).await, fingerprint)
+            }
+            AccessMapRequest::Bitbucket { token, fingerprint } => {
+                (map_token(&BitbucketMapper, &token).await, fingerprint)
+            }
         };
 
         mapped.fingerprint = Some(fp);
@@ -251,11 +299,105 @@ pub async fn map_requests(requests: Vec<AccessMapRequest>) -> Vec<AccessMapResul
     results
 }
 
+/// Maps a token credential using a `TokenAccessMapper`, with fallback error handling.
+async fn map_token(mapper: &impl TokenAccessMapper, token: &str) -> AccessMapResult {
+    mapper
+        .map_access_from_token(token)
+        .await
+        .unwrap_or_else(|err| build_failed_result(mapper.cloud_name(), "token", err))
+}
+
 /// Write HTML/JSON outputs for a collection of identity map results.
 pub fn write_reports(results: &[AccessMapResult], html_out: &std::path::Path) -> Result<()> {
     report::generate_html_report_multi(results, html_out)?;
     Ok(())
 }
+
+// -------------------------------------------------------------------------------------------------
+// TokenAccessMapper implementations
+// -------------------------------------------------------------------------------------------------
+
+/// GitHub access mapper.
+pub struct GithubMapper;
+
+impl TokenAccessMapper for GithubMapper {
+    fn cloud_name(&self) -> &'static str {
+        "github"
+    }
+
+    async fn map_access_from_token(&self, token: &str) -> Result<AccessMapResult> {
+        github::map_access_from_token(token).await
+    }
+}
+
+/// GitLab access mapper.
+pub struct GitlabMapper;
+
+impl TokenAccessMapper for GitlabMapper {
+    fn cloud_name(&self) -> &'static str {
+        "gitlab"
+    }
+
+    async fn map_access_from_token(&self, token: &str) -> Result<AccessMapResult> {
+        gitlab::map_access_from_token(token).await
+    }
+}
+
+/// Slack access mapper.
+pub struct SlackMapper;
+
+impl TokenAccessMapper for SlackMapper {
+    fn cloud_name(&self) -> &'static str {
+        "slack"
+    }
+
+    async fn map_access_from_token(&self, token: &str) -> Result<AccessMapResult> {
+        slack::map_access_from_token(token).await
+    }
+}
+
+/// HuggingFace access mapper.
+pub struct HuggingFaceMapper;
+
+impl TokenAccessMapper for HuggingFaceMapper {
+    fn cloud_name(&self) -> &'static str {
+        "huggingface"
+    }
+
+    async fn map_access_from_token(&self, token: &str) -> Result<AccessMapResult> {
+        huggingface::map_access_from_token(token).await
+    }
+}
+
+/// Gitea access mapper.
+pub struct GiteaMapper;
+
+impl TokenAccessMapper for GiteaMapper {
+    fn cloud_name(&self) -> &'static str {
+        "gitea"
+    }
+
+    async fn map_access_from_token(&self, token: &str) -> Result<AccessMapResult> {
+        gitea::map_access_from_token(token).await
+    }
+}
+
+/// Bitbucket access mapper.
+pub struct BitbucketMapper;
+
+impl TokenAccessMapper for BitbucketMapper {
+    fn cloud_name(&self) -> &'static str {
+        "bitbucket"
+    }
+
+    async fn map_access_from_token(&self, token: &str) -> Result<AccessMapResult> {
+        bitbucket::map_access_from_token(token).await
+    }
+}
+
+// -------------------------------------------------------------------------------------------------
+// Helper functions
+// -------------------------------------------------------------------------------------------------
 
 fn severity_to_str(severity: Severity) -> &'static str {
     match severity {

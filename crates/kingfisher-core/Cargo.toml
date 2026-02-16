@@ -8,34 +8,34 @@ license.workspace = true
 authors.workspace = true
 homepage.workspace = true
 repository.workspace = true
-publish.workspace = true
+publish = false
 
 [dependencies]
 # Serialization
-serde = { version = "1.0", features = ["derive", "rc"] }
-serde_json = "1.0"
-schemars = "0.8"
+serde = { workspace = true, features = ["rc"] }
+serde_json.workspace = true
+schemars.workspace = true
 
 # Error handling
-anyhow = "1.0"
-thiserror = "1.0"
+anyhow.workspace = true
+thiserror.workspace = true
 
 # Hashing and crypto
-sha1 = "0.10"
-hex = "0.4"
+sha1.workspace = true
+hex.workspace = true
 
 # Memory management
 memmap2 = "0.9"
-once_cell = "1.21"
-parking_lot = "0.12"
+once_cell.workspace = true
+parking_lot.workspace = true
 
 # Collections
-smallvec = { version = "1", features = ["const_generics", "const_new", "union"] }
-rustc-hash = "2.1"
+smallvec.workspace = true
+rustc-hash.workspace = true
 dashmap = "6.1"
 
 # Byte string handling
-bstr = { version = "1.12", features = ["serde"] }
+bstr.workspace = true
 memchr = "2.7"
 
 # Git types (minimal, for ObjectId and Time)
@@ -43,6 +43,9 @@ gix = { version = "0.73", default-features = false, features = ["serde"] }
 
 # Console formatting
 console = "0.15"
+
+# Language detection for content types
+tokei = "14.0.0"
 
 [dev-dependencies]
 pretty_assertions = "1.4"

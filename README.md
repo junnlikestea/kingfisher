@@ -42,6 +42,7 @@ Designed for offensive security engineers and blue-teamers alike, Kingfisher hel
 - **Baseline management**: generate and track baselines to suppress known secrets ([docs/BASELINE.md](/docs/BASELINE.md))
 - **Checksum-aware detection**: verifies tokens with built-in checksums (e.g., GitHub, Confluent, Zuplo) — no API calls required
 - **Built-in Report Viewer**: Visualize and triage findings locally with `kingfisher view ./report-file.json`
+- **Audit reporting**: Generate compliance-oriented HTML reports with scan metadata and validation ordering
 - **Library crates**: Embed Kingfisher's scanning engine in your own Rust applications ([docs/LIBRARY.md](docs/LIBRARY.md))
 
 # Benchmark Results
@@ -82,6 +83,7 @@ kingfisher scan /path/to/scan --access-map --view-report
 # Table of Contents
 
 - [Key Features](#key-features)
+- [Compliance and Audit-Ready Scans](#compliance-and-audit-ready-scans)
 - [Benchmark Results](#benchmark-results)
 - [Getting Started](#getting-started)
   - [Quick Start](#quick-start)
@@ -367,6 +369,20 @@ kingfisher validate --rule github "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
   --validation-rps-rule github=1
 ```
 
+
+## Compliance and Audit-Ready Scans
+
+Kingfisher is built to support compliance and security-assurance goals, not just detection. In addition to finding secrets, it helps teams produce evidence that secure development controls are operating.
+
+- **Audit scan output**: generate a standalone HTML report with scan timestamp, report generation time, validation status, and file-level links for findings
+- **Evidence-friendly metadata**: include version, scan stats, and sanitized command arguments for review workflows
+- **Control narrative support**: demonstrate that hardcoded credentials/secrets are actively detected and triaged in CI/CD and developer workflows
+
+```bash
+# Generate an audit-ready HTML report
+kingfisher scan /path/to/code --format html --output kingfisher-audit.html
+```
+
 ## Advanced Scanning Options
 
 ```bash
@@ -559,6 +575,7 @@ kingfisher scan /tmp/repo --branch feature-1 \
 |----------|-------------|
 | [INSTALLATION.md](docs/INSTALLATION.md) | Complete installation guide including pre-commit hooks setup for git, pre-commit framework, and Husky |
 | [INTEGRATIONS.md](docs/INTEGRATIONS.md) | Platform-specific scanning guide (GitHub, GitLab, AWS S3, Docker, Jira, Confluence, Slack, etc.) |
+| [ACCESS_MAP.md](docs/ACCESS_MAP.md) | Access map: supported tokens and credential formats (GitHub/GitLab/Slack/AWS/GCP/Azure Storage/Postgres/MongoDB) |
 | [ADVANCED.md](docs/ADVANCED.md) | Advanced features: baselines, confidence levels, validation tuning, CI scanning, and more |
 | [RULES.md](docs/RULES.md) | Writing custom detection rules, pattern requirements, and checksum intelligence |
 | [BASELINE.md](docs/BASELINE.md) | Baseline management for tracking known secrets and detecting new ones |

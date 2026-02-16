@@ -293,48 +293,62 @@
 
     /* Access Map */
     .am-container {
-      display: grid;
-      grid-template-columns: 2fr 1fr; /* tree 2/3, detail 1/3 */
-      height: 600px;
+      padding: 16px 20px;
       background: var(--surface);
     }
 
-    .am-sidebar {
-      border-right: 1px solid var(--border);
-      background: var(--surface-muted);
-      overflow-y: auto;
-      padding: 16px;
-    }
-
-    .am-main {
-      padding: 24px;
-      overflow-y: auto;
-      background: var(--surface);
-    }
-
-    .am-search {
-      position: sticky;
-      top: 0;
-      background: var(--surface-muted);
-      padding-bottom: 10px;
-      margin-bottom: 8px;
+    .am-toolbar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      padding-bottom: 14px;
       border-bottom: 1px solid var(--border);
-      z-index: 5;
+      margin-bottom: 16px;
     }
 
-    .am-search input {
-      width: 100%;
+    .am-toolbar input {
+      flex: 1;
+      min-width: 200px;
       padding: 8px 12px;
       border-radius: 6px;
       border: 1px solid var(--border);
       font-size: 13px;
-      background: var(--surface);
+      background: var(--surface-muted);
       color: var(--text-main);
     }
 
-    .am-search input:focus {
+    .am-toolbar input:focus {
       outline: none;
       border-color: var(--brand);
+    }
+
+    .am-stats {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      padding: 12px 16px;
+      background: var(--surface-muted);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 16px;
+      font-size: 13px;
+    }
+
+    .am-stat {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .am-stat-value {
+      font-weight: 700;
+      font-size: 16px;
+      color: var(--text-main);
+    }
+
+    .am-stat-label {
+      color: var(--text-muted);
     }
 
     .am-empty-hint {
@@ -346,94 +360,196 @@
       margin: 12px 20px 0;
     }
 
-    /* Tree */
-    .tree-node {
-      position: relative;
-      margin-left: 20px;
-      padding-left: 12px;
-      border-left: 1px solid var(--border);
-    }
-
-    .tree-node:last-child {
-      border-left: none;
-    }
-
-    .tree-node::before {
-      content: "";
-      position: absolute;
-      top: 14px;
-      left: 0;
-      width: 12px;
-      height: 1px;
-      background: var(--border);
-    }
-
-    .node-content {
+    /* Identity cards */
+    .am-card-list {
       display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 8px;
-      border-radius: 6px;
-      cursor: pointer;
-      user-select: none;
-      font-size: 13px;
-    }
-
-    .node-content:hover {
-      background: var(--hover);
-    }
-
-    .node-icon {
-      width: 20px;
-      height: 20px;
-      border-radius: 4px;
-      display: grid;
-      place-items: center;
-      font-size: 12px;
-      flex-shrink: 0;
-    }
-
-    .icon-identity { background: #e0e7ff; color: #3730a3; }
-    .icon-resource { background: #ffe4e6; color: #9f1239; }
-    .icon-permission { background: #dcfce7; color: #166534; }
-    .icon-group { background: #fef3c7; color: #92400e; }
-
-    .tree-children {
-      padding-top: 4px;
-      padding-left: 8px;
-      display: none;
-    }
-
-    .tree-children.open {
-      display: block;
-    }
-
-    /* Access detail */
-    .am-card-header {
-      padding-bottom: 16px;
-      margin-bottom: 16px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .am-card-title {
-      font-size: 18px;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
+      flex-direction: column;
       gap: 12px;
     }
 
-    .detail-icon-lg {
-      width: 40px;
-      height: 40px;
+    .id-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      overflow: hidden;
+      transition: border-color 0.15s;
+    }
+
+    .id-card:hover {
+      border-color: var(--border-strong);
+    }
+
+    .id-card__header {
+      padding: 14px 16px;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .id-card__header:hover {
+      background: var(--surface-muted);
+    }
+
+    .id-card__avatar {
+      width: 36px;
+      height: 36px;
       border-radius: 8px;
       display: grid;
       place-items: center;
+      font-size: 18px;
+      flex-shrink: 0;
       background: var(--surface-muted);
       border: 1px solid var(--border);
-      font-size: 20px;
     }
 
+    .id-card__info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .id-card__name {
+      font-weight: 700;
+      font-size: 14px;
+      word-break: break-all;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .id-card__meta {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .id-card__meta-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .id-card__perms-preview {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 8px;
+    }
+
+    .id-card__toggle {
+      font-size: 11px;
+      color: var(--text-muted);
+      flex-shrink: 0;
+      margin-top: 4px;
+    }
+
+    .id-card__body {
+      display: none;
+      border-top: 1px solid var(--border);
+      padding: 16px;
+      background: var(--surface-muted);
+    }
+
+    .id-card__body.open {
+      display: block;
+    }
+
+    .id-card__section {
+      margin-bottom: 14px;
+    }
+
+    .id-card__section:last-child {
+      margin-bottom: 0;
+    }
+
+    .id-card__section-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .resource-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 8px;
+    }
+
+    .resource-chip {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      font-size: 12px;
+    }
+
+    .resource-chip__name {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 11px;
+      font-weight: 600;
+      word-break: break-all;
+      color: var(--text-main);
+    }
+
+    .resource-chip__name a {
+      font-size: 10px;
+      color: var(--brand);
+      margin-left: 4px;
+    }
+
+    .resource-chip__perms {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 3px;
+    }
+
+    .token-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 6px 16px;
+    }
+
+    .token-field {
+      font-size: 12px;
+    }
+
+    .token-field strong {
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .id-card__footer {
+      padding: 8px 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .id-card__footer code {
+      background: var(--surface-muted);
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    /* keep badge styles for card headers */
     .am-card-meta {
       display: flex;
       gap: 8px;
@@ -853,6 +969,212 @@
 
     .hidden { display: none !important; }
 
+    /* Blast Radius (finding detail) */
+    .blast-radius {
+      margin-top: 20px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .blast-radius__header {
+      padding: 12px 16px;
+      background: var(--surface-strong);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .blast-radius__header h4 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .blast-radius__body {
+      padding: 16px;
+    }
+
+    .risk-rationale {
+      padding: 12px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      line-height: 1.6;
+      margin-bottom: 14px;
+    }
+
+    .risk-rationale.critical {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
+    }
+
+    .risk-rationale.high {
+      background: #fff7ed;
+      border: 1px solid #fed7aa;
+      color: #9a3412;
+    }
+
+    .risk-rationale.medium {
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      color: #92400e;
+    }
+
+    .risk-rationale.low {
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      color: #166534;
+    }
+
+    .risk-rationale.none {
+      background: var(--surface-muted);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+    }
+
+    :root[data-theme="dark"] .risk-rationale.critical {
+      background: rgba(239, 68, 68, 0.1);
+      border-color: rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+    }
+
+    :root[data-theme="dark"] .risk-rationale.high {
+      background: rgba(249, 115, 22, 0.1);
+      border-color: rgba(249, 115, 22, 0.3);
+      color: #fdba74;
+    }
+
+    :root[data-theme="dark"] .risk-rationale.medium {
+      background: rgba(234, 179, 8, 0.1);
+      border-color: rgba(234, 179, 8, 0.3);
+      color: #fde68a;
+    }
+
+    :root[data-theme="dark"] .risk-rationale.low {
+      background: rgba(34, 197, 94, 0.1);
+      border-color: rgba(34, 197, 94, 0.3);
+      color: #86efac;
+    }
+
+    :root[data-theme="dark"] .risk-rationale.none {
+      background: var(--surface-muted);
+      border-color: var(--border);
+      color: var(--text-muted);
+    }
+
+    .blast-identity {
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface-muted);
+      margin-bottom: 10px;
+    }
+
+    .blast-identity__header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+
+    .blast-resource-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .blast-resource-item {
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      font-size: 13px;
+    }
+
+    .blast-resource-name {
+      font-weight: 600;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      word-break: break-all;
+    }
+
+    .blast-perms {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 6px;
+    }
+
+    .blast-perm-tag {
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      background: #ecfdf5;
+      color: #16a34a;
+      border: 1px solid #bbf7d0;
+    }
+
+    :root[data-theme="dark"] .blast-perm-tag {
+      background: rgba(34, 197, 94, 0.1);
+      color: #86efac;
+      border-color: rgba(34, 197, 94, 0.3);
+    }
+
+    /* Scan metadata bar */
+    .scan-meta-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      padding: 14px 20px;
+      background: var(--surface-muted);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .scan-meta-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .scan-meta-item strong {
+      color: var(--text-main);
+      font-weight: 600;
+    }
+
+    /* Report type selector */
+    .report-type-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 12px 0;
+      border-top: 1px solid var(--border);
+      margin-top: 8px;
+    }
+
+    .report-type-group label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
     .loading-overlay {
       position: fixed;
       inset: 0;
@@ -961,21 +1283,39 @@
               Findings
             </button>
           </div>
-          <div class="nav-group" style="display:flex; flex-direction:column; gap:10px;">
-            <button class="btn" id="download-findings-report" type="button" style="width:100%;">Download Findings Report</button>
-            <div style="display:flex; flex-direction:column; gap:6px;">
-              <span style="font-size:11px; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted);">Findings scope</span>
+          <div class="report-type-group">
+            <label>For Researchers</label>
+            <button class="btn" id="download-risk-report" type="button" style="width:100%;">Risk Report</button>
+            <label style="display:flex; align-items:center; gap:6px; font-size:12px; text-transform:none; letter-spacing:normal; color:var(--text-main); cursor:pointer; margin-top:2px;">
+              <input type="checkbox" id="risk-active-only"> Active credentials only
+            </label>
+            <div style="font-size:11px; color:var(--text-muted); line-height:1.4;">Findings + blast radius per credential. Suitable for bug bounty submissions.</div>
+          </div>
+          <div class="report-type-group">
+            <label>For Defenders</label>
+            <button class="btn" id="download-scan-report" type="button" style="width:100%;">Scan Report</button>
+            <div style="display:flex; flex-direction:column; gap:6px; margin-top:4px;">
               <select id="report-scope" class="rows-select">
                 <option value="all" selected>All findings</option>
                 <option value="filtered">Filtered findings</option>
               </select>
             </div>
-            <button class="btn" id="download-access-report" type="button" style="width:100%;" disabled>Download Access Map Report</button>
+            <label style="display:flex; align-items:center; gap:6px; font-size:12px; text-transform:none; letter-spacing:normal; color:var(--text-main); cursor:pointer;">
+              <input type="checkbox" id="scan-active-only"> Active credentials only
+            </label>
+            <div style="font-size:11px; color:var(--text-muted); line-height:1.4;">Scan summary for tickets and remediation tracking.</div>
+            <button class="btn" id="download-access-report" type="button" style="width:100%; margin-top:4px;" disabled>Access Map Report</button>
           </div>
         </aside>
 
         <div class="view-stack">
           <section id="view-dashboard" class="view">
+            <div id="scan-meta-section" class="scan-meta-bar hidden">
+              <div class="scan-meta-item"><strong>Report Generated:</strong> <span id="meta-timestamp">—</span></div>
+              <div class="scan-meta-item" id="meta-target-wrap" style="display:none;"><strong>Target:</strong> <span id="meta-target">—</span></div>
+              <div class="scan-meta-item" id="meta-duration-wrap" style="display:none;"><strong>Duration:</strong> <span id="meta-duration">—</span></div>
+              <div class="scan-meta-item" id="meta-version-wrap" style="display:none;"><strong>Version:</strong> <span id="meta-version">—</span></div>
+            </div>
             <section class="panel">
               <div class="metrics-grid">
                 <div class="metric">
@@ -1020,115 +1360,21 @@
               <div class="panel__header">
                 <div class="panel__title">
                   <h3>Access Map</h3>
-                  <p>Identity hierarchy: Identity &gt; Resources &gt; Resource &gt; Permissions</p>
+                  <p>Credentials and what they can reach</p>
                 </div>
                 <div style="display:flex; gap:10px; align-items:center;">
-                  <button class="btn" id="copy-access-map" type="button">Copy Access Map</button>
-                  <button class="btn" id="am-toggle" type="button">Collapse</button>
+                  <button class="btn" id="copy-access-map" type="button">Copy JSON</button>
                 </div>
               </div>
-              <div id="am-empty-notice" class="am-empty-hint hidden">No Access Map entries in this report.</div>
+              <div id="am-empty-notice" class="am-empty-hint hidden">No Access Map entries in this report. Run a scan with <code>--access-map</code> to map credential blast radius.</div>
               <div class="am-container" id="am-container">
-                <div class="am-sidebar">
-                  <div class="am-search">
-                    <input id="tree-search" type="text" placeholder="Filter identities or resources…">
-                  </div>
-                  <div id="am-tree-root" style="padding-top:8px;">
-                    <div style="color:var(--text-muted); font-size:13px; text-align:center; margin-top:32px;">
-                      No access map data found in report.
-                    </div>
-                  </div>
+                <div id="am-stats-bar" class="am-stats hidden"></div>
+                <div class="am-toolbar">
+                  <input id="tree-search" type="text" placeholder="Filter by identity, resource, or permission…">
                 </div>
-                <div class="am-main">
-                  <div id="am-empty-state" style="display:grid; place-items:center; height:100%; color:var(--text-muted);">
-                    Select an item in the tree to view details.
-                  </div>
-                  <div id="am-detail-view" class="hidden">
-                    <div class="am-card-header">
-                      <div class="am-card-title">
-                        <div id="am-detail-icon" class="detail-icon-lg">👤</div>
-                        <div>
-                          <div id="am-detail-name">Identity</div>
-                          <div class="am-card-meta" id="am-detail-meta"></div>
-                        </div>
-                      </div>
-                    </div>
-                    <div class="detail-grid">
-                      <div class="detail-field">
-                        <label>Type</label>
-                        <div id="am-detail-type">Identity</div>
-                      </div>
-                      <div class="detail-field">
-                        <label>Cloud Provider</label>
-                        <div id="am-detail-cloud">-</div>
-                      </div>
-                    </div>
-                    <div id="am-token-container" class="hidden">
-                      <h4 style="margin-bottom:10px; border-bottom:1px solid var(--border); padding-bottom:6px;">Token Details</h4>
-                      <div class="detail-grid">
-                        <div class="detail-field">
-                          <label>Token Name</label>
-                          <div id="am-token-name">-</div>
-                        </div>
-                        <div class="detail-field">
-                          <label>Username</label>
-                          <div id="am-token-username">-</div>
-                        </div>
-                        <div class="detail-field">
-                          <label>Token Type</label>
-                          <div id="am-token-type">-</div>
-                        </div>
-                        <div class="detail-field">
-                          <label>Account Type</label>
-                          <div id="am-token-account-type">-</div>
-                        </div>
-                        <div class="detail-field">
-                          <label>User ID</label>
-                          <div id="am-token-user">-</div>
-                        </div>
-                        <div class="detail-field">
-                          <label>Company</label>
-                          <div id="am-token-company">-</div>
-                        </div>
-                        <div class="detail-field">
-                          <label>Created At</label>
-                          <div id="am-token-created">-</div>
-                        </div>
-                        <div class="detail-field">
-                          <label>Location</label>
-                          <div id="am-token-location">-</div>
-                        </div>
-                        <div class="detail-field">
-                          <label>Last Used</label>
-                          <div id="am-token-last-used">-</div>
-                        </div>
-                        <div class="detail-field">
-                          <label>Email</label>
-                          <div id="am-token-email">-</div>
-                        </div>
-                        <div class="detail-field">
-                          <label>Expires At</label>
-                          <div id="am-token-expires">-</div>
-                        </div>
-                        <div class="detail-field">
-                          <label>Profile URL</label>
-                          <div id="am-token-url">-</div>
-                        </div>
-                        <div class="detail-field">
-                          <label>Instance Version</label>
-                          <div id="am-token-version">-</div>
-                        </div>
-                        <div class="detail-field">
-                          <label>Enterprise</label>
-                          <div id="am-token-enterprise">-</div>
-                        </div>
-                      </div>
-                      <div id="am-token-scopes" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
-                    </div>
-                    <div id="am-perms-container" class="hidden">
-                      <h4 style="margin-bottom:10px; border-bottom:1px solid var(--border); padding-bottom:6px;">Permissions</h4>
-                      <div id="am-perms-list" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
-                    </div>
+                <div id="am-card-list" class="am-card-list">
+                  <div style="color:var(--text-muted); font-size:13px; text-align:center; padding:32px 0;">
+                    No access map data found in report.
                   </div>
                 </div>
               </div>
@@ -1273,6 +1519,22 @@
                     </button>
                   </div>
                 </div>
+
+                <div id="fd-blast-radius" class="blast-radius hidden">
+                  <div class="blast-radius__header">
+                    <h4>
+                      <span>Blast Radius</span>
+                      <span id="fd-blast-count" class="badge" style="font-size:11px;"></span>
+                    </h4>
+                    <button class="btn" id="fd-export-risk-report" type="button" style="font-size:12px; padding:6px 12px;">
+                      Export Risk Report
+                    </button>
+                  </div>
+                  <div class="blast-radius__body">
+                    <div id="fd-risk-rationale" class="risk-rationale none"></div>
+                    <div id="fd-blast-entries"></div>
+                  </div>
+                </div>
               </div>
             </section>
           </section>
@@ -1293,6 +1555,8 @@
     let sortField = "rule";
     let sortDirection = "asc";
     let autoCollapsedAccessMap = false;
+    let currentDetailFinding = null;
+    let scanMetadata = {};
 
     const dropZone = document.getElementById("drop-zone");
     const fileInput = document.getElementById("file-input");
@@ -1301,9 +1565,11 @@
     const errorMsg = document.getElementById("error-msg");
     const uploadSection = document.getElementById("upload-section");
     const dashboard = document.getElementById("dashboard");
-    const downloadFindingsReportBtn = document.getElementById("download-findings-report");
+    const downloadRiskReportBtn = document.getElementById("download-risk-report");
+    const downloadScanReportBtn = document.getElementById("download-scan-report");
     const reportScopeSelect = document.getElementById("report-scope");
     const downloadAccessReportBtn = document.getElementById("download-access-report");
+    const exportFindingRiskBtn = document.getElementById("fd-export-risk-report");
 
     const searchInput = document.getElementById("search-input");
     const validationSelect = document.getElementById("validation-filter");
@@ -1317,7 +1583,7 @@
 
     const treeSearch = document.getElementById("tree-search");
     const amContainer = document.getElementById("am-container");
-    const amToggle = document.getElementById("am-toggle");
+    const amToggle = document.getElementById("am-toggle"); // may be null now
     const copyAccessMapButton = document.getElementById("copy-access-map");
     const amEmptyNotice = document.getElementById("am-empty-notice");
     const themeToggle = document.getElementById("theme-toggle");
@@ -1415,22 +1681,38 @@
       renderAccessMapTree(e.target.value || "");
     });
 
-    amToggle.addEventListener("click", () => {
-      const willCollapse = !amContainer.classList.contains("hidden");
-      setAccessMapCollapsed(willCollapse);
-    });
+    if (amToggle) {
+      amToggle.addEventListener("click", () => {
+        const willCollapse = !amContainer.classList.contains("hidden");
+        setAccessMapCollapsed(willCollapse);
+      });
+    }
 
     downloadJsonBtn.addEventListener("click", downloadFindingsJson);
     downloadCsvBtn.addEventListener("click", downloadFindingsCsv);
     copyAccessMapButton.addEventListener("click", copyFilteredAccessMap);
-    if (downloadFindingsReportBtn) {
-      downloadFindingsReportBtn.addEventListener("click", () => {
+    if (downloadRiskReportBtn) {
+      downloadRiskReportBtn.addEventListener("click", () => {
+        const activeOnly = document.getElementById("risk-active-only");
+        generateRiskReport({ activeOnly: activeOnly && activeOnly.checked });
+      });
+    }
+    if (downloadScanReportBtn) {
+      downloadScanReportBtn.addEventListener("click", () => {
         const scope = reportScopeSelect ? reportScopeSelect.value : "all";
-        generatePdfReport(scope);
+        const activeOnly = document.getElementById("scan-active-only");
+        generateScanReport(scope, { activeOnly: activeOnly && activeOnly.checked });
       });
     }
     if (downloadAccessReportBtn) {
       downloadAccessReportBtn.addEventListener("click", generateAccessMapReport);
+    }
+    if (exportFindingRiskBtn) {
+      exportFindingRiskBtn.addEventListener("click", () => {
+        if (currentDetailFinding) {
+          exportSingleFindingRiskReport(currentDetailFinding);
+        }
+      });
     }
     if (themeToggle) {
       themeToggle.addEventListener("click", () => {
@@ -1477,11 +1759,11 @@
       if (!amContainer) return;
       if (collapsed) {
         amContainer.classList.add("hidden");
-        amToggle.textContent = "Expand";
+        if (amToggle) amToggle.textContent = "Expand";
         autoCollapsedAccessMap = auto;
       } else {
         amContainer.classList.remove("hidden");
-        amToggle.textContent = "Collapse";
+        if (amToggle) amToggle.textContent = "Collapse";
         autoCollapsedAccessMap = false;
       }
     }
@@ -1628,6 +1910,8 @@
       accessMap = [];
       filteredAccessMapView = [];
       rawData = null;
+      currentDetailFinding = null;
+      scanMetadata = {};
 
       currentFilter = "";
       validationFilter = "all";
@@ -1641,15 +1925,22 @@
       rowsSelect.value = "10";
       treeSearch.value = "";
 
-      document.getElementById("am-empty-state").classList.remove("hidden");
-      document.getElementById("am-detail-view").classList.add("hidden");
       setAccessMapCollapsed(true, { auto: true });
       if (amToggle) amToggle.disabled = true;
       if (amEmptyNotice) amEmptyNotice.classList.add("hidden");
+      const amStatsBar = document.getElementById("am-stats-bar");
+      if (amStatsBar) amStatsBar.classList.add("hidden");
 
       renderAccessMapTree();
       renderFindingsTable();
       updateMetrics();
+
+      const scanMetaSection = document.getElementById("scan-meta-section");
+      if (scanMetaSection) scanMetaSection.classList.add("hidden");
+      const blastSection = document.getElementById("fd-blast-radius");
+      if (blastSection) blastSection.classList.add("hidden");
+      const findingDetail = document.getElementById("finding-detail");
+      if (findingDetail) findingDetail.classList.add("hidden");
 
       setActiveView("view-dashboard");
       dashboard.classList.add("hidden");
@@ -1712,8 +2003,10 @@
       searchInput.value = "";
       validationSelect.value = "all";
 
+      extractScanMetadata();
       setActiveView("view-dashboard");
       updateMetrics();
+      renderScanMetadata();
       renderAccessMapTree();
       renderFindingsTable();
 
@@ -1723,6 +2016,133 @@
       const elapsed = performance.now() - t0;
       loaderText.textContent = "Done in " + elapsed.toFixed(1) + " ms";
       setTimeout(() => loader.classList.add("hidden"), 250);
+    }
+
+    function extractScanMetadata() {
+      scanMetadata = {};
+      if (!rawData || typeof rawData !== "object") {
+        scanMetadata.timestamp = new Date().toLocaleString();
+        return;
+      }
+
+      // Try to extract metadata from the raw report data
+      const data = rawData;
+      const reportMeta = data.metadata && typeof data.metadata === "object" ? data.metadata : {};
+      scanMetadata.timestamp =
+        reportMeta.scan_timestamp ||
+        reportMeta.generated_at ||
+        data.timestamp ||
+        data.scan_timestamp ||
+        data.generated_at ||
+        new Date().toLocaleString();
+
+      // Target info
+      scanMetadata.target =
+        reportMeta.target ||
+        data.target ||
+        data.scan_target ||
+        data.repository ||
+        data.repo ||
+        (data.stats && data.stats.target) ||
+        (data.summary && data.summary.target) || "";
+
+      // Duration
+      const duration = data.scan_duration || data.scanDuration ||
+        (data.stats && data.stats.duration) ||
+        (data.summary && data.summary.duration) || "";
+      if (duration) {
+        scanMetadata.duration = typeof duration === "number" ? (duration / 1000).toFixed(1) + "s" : String(duration);
+      }
+
+      // Version
+      scanMetadata.version =
+        reportMeta.kingfisher_version ||
+        data.version ||
+        data.kingfisher_version ||
+        (data.kingfisher && data.kingfisher.version) || "";
+      scanMetadata.latestVersion =
+        reportMeta.latest_version_available ||
+        (data.kingfisher && data.kingfisher.latest_version) || "";
+      scanMetadata.updateCheckStatus =
+        reportMeta.update_check_status ||
+        (data.kingfisher && data.kingfisher.update_check_status) || "";
+
+      // Sanitized command-line arguments (when present)
+      const cliArgs = reportMeta.command_line_args;
+      if (Array.isArray(cliArgs) && cliArgs.length > 0) {
+        scanMetadata.commandLineArgs = cliArgs.map((arg) => String(arg));
+      }
+
+      const reportSummary = reportMeta.summary && typeof reportMeta.summary === "object"
+        ? reportMeta.summary
+        : null;
+      if (reportSummary) {
+        scanMetadata.summary = {
+          findings: Number(reportSummary.findings || 0),
+          active: Number(reportSummary.active_findings || 0),
+          inactive: Number(reportSummary.inactive_findings || 0),
+          unknown: Number(reportSummary.unknown_validation_findings || 0),
+          identities: Number(reportSummary.access_map_identities || 0),
+          rulesApplied: Number(reportSummary.rules_applied || 0),
+          confidenceLevel: reportSummary.confidence_level ? String(reportSummary.confidence_level) : "",
+          customRulesUsed: Boolean(reportSummary.custom_rules_used),
+          successfulValidations: Number(reportSummary.successful_validations || 0),
+          failedValidations: Number(reportSummary.failed_validations || 0),
+          skippedValidations: Number(reportSummary.skipped_validations || 0),
+          blobsScanned: Number(reportSummary.blobs_scanned || 0),
+          bytesScanned: Number(reportSummary.bytes_scanned || 0),
+          scanDurationSeconds: Number(reportSummary.scan_duration_seconds || 0),
+        };
+      }
+
+      // Bytes scanned
+      const bytes = data.bytes_scanned ||
+        (data.stats && data.stats.bytes_scanned) ||
+        (data.summary && data.summary.bytes_scanned) || 0;
+      if (bytes > 0) {
+        scanMetadata.bytesScanned = bytes >= 1048576
+          ? (bytes / 1048576).toFixed(1) + " MB"
+          : bytes >= 1024
+            ? (bytes / 1024).toFixed(1) + " KB"
+            : bytes + " B";
+      }
+    }
+
+    function renderScanMetadata() {
+      const section = document.getElementById("scan-meta-section");
+      if (!section) return;
+
+      const ts = document.getElementById("meta-timestamp");
+      const targetWrap = document.getElementById("meta-target-wrap");
+      const target = document.getElementById("meta-target");
+      const durationWrap = document.getElementById("meta-duration-wrap");
+      const duration = document.getElementById("meta-duration");
+      const versionWrap = document.getElementById("meta-version-wrap");
+      const version = document.getElementById("meta-version");
+
+      section.classList.remove("hidden");
+      if (ts) ts.textContent = scanMetadata.timestamp || new Date().toLocaleString();
+
+      if (scanMetadata.target) {
+        targetWrap.style.display = "";
+        target.textContent = scanMetadata.target;
+      } else {
+        targetWrap.style.display = "none";
+      }
+
+      if (scanMetadata.duration) {
+        durationWrap.style.display = "";
+        duration.textContent = scanMetadata.duration;
+      } else {
+        durationWrap.style.display = "none";
+      }
+
+      if (scanMetadata.version) {
+        versionWrap.style.display = "";
+        version.textContent = scanMetadata.version;
+      } else {
+        versionWrap.style.display = "none";
+      }
     }
 
     function updateMetrics() {
@@ -2128,15 +2548,25 @@
         .join("");
     }
 
-    function generatePdfReport(scope = "all") {
-      if (!rawData) {
-        alert("Load a report before downloading a Findings report.");
+    function generateScanReport(scope = "all", { activeOnly = false } = {}) {
+      if (!findings || findings.length === 0) {
+        alert("Load a report before downloading a Scan report.");
         return;
       }
 
       const statusOrder = { active: 0, inactive: 1, not_attempted: 2, unknown: 3 };
-      const baseFindings =
+      let baseFindings =
         scope === "filtered" ? getFilteredSortedFindings().slice() : (Array.isArray(findings) ? findings.slice() : []);
+      if (activeOnly) {
+        baseFindings = baseFindings.filter((f) => {
+          const fd = f.finding || {};
+          return normalizeValidationStatus(fd.validation && fd.validation.status ? fd.validation.status : "") === "active";
+        });
+        if (baseFindings.length === 0) {
+          alert("No active credentials found for the selected scope. Uncheck 'Active credentials only' to include all findings.");
+          return;
+        }
+      }
       const findingsForReport = baseFindings.slice();
       findingsForReport.sort((a, b) => {
         const fa = a.finding || {};
@@ -2159,7 +2589,27 @@
         const conf = f.finding && f.finding.confidence ? String(f.finding.confidence) : "";
         return conf.toLowerCase() === "high";
       }).length;
-      const scopeLabel = scope === "filtered" ? "Filtered findings" : "All findings";
+      const scopeLabel = (scope === "filtered" ? "Filtered findings" : "All findings") + (activeOnly ? " (active only)" : "");
+
+      // Gather unique rules for summary
+      const ruleSummary = {};
+      baseFindings.forEach((entry) => {
+        const rule = entry.rule || {};
+        const finding = entry.finding || {};
+        const key = rule.id || rule.name || "unknown";
+        if (!ruleSummary[key]) {
+          ruleSummary[key] = { name: rule.name || rule.id || "Unknown", count: 0, active: 0 };
+        }
+        ruleSummary[key].count++;
+        if (normalizeValidationStatus(finding.validation && finding.validation.status ? finding.validation.status : "") === "active") {
+          ruleSummary[key].active++;
+        }
+      });
+
+      const ruleSummaryRows = Object.values(ruleSummary)
+        .sort((a, b) => b.active - a.active || b.count - a.count)
+        .map((r) => `<tr><td>${escapeHtml(r.name)}</td><td>${r.count}</td><td style="color:${r.active > 0 ? "#dc2626" : "#6b7280"};font-weight:${r.active > 0 ? "700" : "400"};">${r.active}</td></tr>`)
+        .join("");
 
       const findingsHtml = findingsForReport.length
         ? findingsForReport
@@ -2167,113 +2617,187 @@
               const rule = entry.rule || {};
               const finding = entry.finding || {};
               const statusRaw = finding.validation && finding.validation.status ? finding.validation.status : "Unknown";
-              const status = normalizeValidationStatus(statusRaw);
+              const normalizedStatus = normalizeValidationStatus(statusRaw);
               const findingId = getFindingIdFromFinding(finding);
               const gitUrl = getFileUrlFromFinding(finding);
-              const snippet = (finding.snippet || "").toString().replace(/\s+/g, " ").trim();
+              const statusColor = normalizedStatus === "active" ? "#dc2626" : normalizedStatus === "inactive" ? "#f97316" : "#6b7280";
               return `
                 <tr>
                   <td>${escapeHtml(rule.name || rule.id || "")}</td>
-                  <td>${escapeHtml(findingId || "")}</td>
-                  <td>${escapeHtml(finding.path || "")}</td>
-                  <td>${escapeHtml(statusRaw)}</td>
-                  <td>${finding.line != null ? escapeHtml(finding.line) : ""}</td>
-                  <td>${escapeHtml(gitUrl || "")}</td>
-                  <td>${escapeHtml(snippet.slice(0, 200))}</td>
+                  <td style="font-size:10px;font-family:monospace;">${escapeHtml(findingId ? findingId.substring(0, 12) : "")}</td>
+                  <td style="font-size:10px;">${escapeHtml(finding.path || "")}</td>
+                  <td style="color:${statusColor};font-weight:600;">${escapeHtml(statusRaw)}</td>
+                  <td>${escapeHtml(finding.confidence || "")}</td>
+                  <td>${finding.line != null ? finding.line : ""}</td>
+                  ${gitUrl ? `<td style="font-size:10px;"><a href="${escapeHtml(gitUrl)}" style="color:#1d4ed8;">${escapeHtml(gitUrl.length > 50 ? gitUrl.substring(0, 50) + "..." : gitUrl)}</a></td>` : "<td></td>"}
                 </tr>
               `;
             })
             .join("")
         : '<tr><td colspan="7">No findings available.</td></tr>';
 
-      const accessListHtml = hasAccess
-        ? buildAccessMapListHtml()
+      // Scan metadata section
+      const metaLines = [];
+      if (scanMetadata.timestamp) metaLines.push(`<strong>Scan Date:</strong> ${escapeHtml(scanMetadata.timestamp)}`);
+      if (scanMetadata.target) metaLines.push(`<strong>Target:</strong> ${escapeHtml(scanMetadata.target)}`);
+      if (scanMetadata.duration) metaLines.push(`<strong>Duration:</strong> ${escapeHtml(scanMetadata.duration)}`);
+      if (scanMetadata.version) metaLines.push(`<strong>Version:</strong> ${escapeHtml(scanMetadata.version)}`);
+      if (scanMetadata.latestVersion) metaLines.push(`<strong>Latest:</strong> ${escapeHtml(scanMetadata.latestVersion)}`);
+      if (scanMetadata.updateCheckStatus) metaLines.push(`<strong>Update Check:</strong> ${escapeHtml(scanMetadata.updateCheckStatus)}`);
+      if (scanMetadata.summary && scanMetadata.summary.rulesApplied > 0) {
+        metaLines.push(`<strong>Rules Applied:</strong> ${scanMetadata.summary.rulesApplied}`);
+      }
+      if (scanMetadata.summary && scanMetadata.summary.confidenceLevel) {
+        metaLines.push(`<strong>Confidence:</strong> ${escapeHtml(scanMetadata.summary.confidenceLevel)}`);
+      }
+      if (scanMetadata.summary) {
+        metaLines.push(`<strong>Custom Rules:</strong> ${scanMetadata.summary.customRulesUsed ? "Yes" : "No"}`);
+      }
+      if (scanMetadata.summary && scanMetadata.summary.successfulValidations) {
+        metaLines.push(`<strong>Successful Validations:</strong> ${scanMetadata.summary.successfulValidations}`);
+      }
+      if (scanMetadata.summary && scanMetadata.summary.failedValidations) {
+        metaLines.push(`<strong>Failed Validations:</strong> ${scanMetadata.summary.failedValidations}`);
+      }
+      if (scanMetadata.summary && scanMetadata.summary.skippedValidations) {
+        metaLines.push(`<strong>Skipped Validations:</strong> ${scanMetadata.summary.skippedValidations}`);
+      }
+      if (scanMetadata.summary && scanMetadata.summary.blobsScanned) {
+        metaLines.push(`<strong>Blobs Scanned:</strong> ${scanMetadata.summary.blobsScanned}`);
+      }
+      if (scanMetadata.summary && scanMetadata.summary.bytesScanned) {
+        metaLines.push(`<strong>Bytes Scanned:</strong> ${escapeHtml(formatBytes(scanMetadata.summary.bytesScanned))}`);
+      }
+      if (scanMetadata.summary && scanMetadata.summary.scanDurationSeconds) {
+        metaLines.push(`<strong>Scan Duration:</strong> ${escapeHtml(scanMetadata.summary.scanDurationSeconds.toFixed(3) + "s")}`);
+      }
+      const cliArgsHtml = scanMetadata.commandLineArgs && scanMetadata.commandLineArgs.length
+        ? `<div style="margin-bottom:16px;"><div style="font-size:12px;font-weight:700;color:#0f172a;margin-bottom:6px;">Sanitized command-line arguments</div><pre style="margin:0;padding:10px 12px;background:#0f172a;color:#e2e8f0;border-radius:8px;white-space:pre-wrap;word-break:break-word;font-size:11px;line-height:1.5;">${escapeHtml(scanMetadata.commandLineArgs.join(" "))}</pre></div>`
+        : "";
+      const metaHtml = metaLines.length
+        ? `<div style="display:flex;flex-wrap:wrap;gap:16px;padding:10px 14px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;font-size:12px;margin-bottom:16px;">${metaLines.join('<span style="color:#cbd5e1;">|</span>')}</div>${cliArgsHtml}`
         : "";
 
-      const accessSectionContent = hasAccess
-        ? `<ul class="access-list">${accessListHtml}</ul>`
-        : "<p>No Access Map entries were found for this report.</p>";
+      // Executive summary
+      let execSummary = "";
+      if (counts.active > 0) {
+        execSummary = `<div style="padding:12px 16px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;font-size:13px;color:#991b1b;line-height:1.6;margin-bottom:16px;">
+          <strong>Action Required:</strong> This scan found <strong>${counts.active} active credential${counts.active !== 1 ? "s" : ""}</strong> that validated successfully.
+          These credentials are live and should be rotated or revoked immediately.
+          ${highConfidence > 0 ? `${highConfidence} finding${highConfidence !== 1 ? "s" : ""} ${highConfidence !== 1 ? "are" : "is"} high confidence.` : ""}
+          ${hasAccess ? `Access mapping identified ${accessMap.length} identit${accessMap.length !== 1 ? "ies" : "y"} with resource access.` : ""}
+        </div>`;
+      } else if (baseFindings.length > 0) {
+        execSummary = `<div style="padding:12px 16px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;font-size:13px;color:#92400e;line-height:1.6;margin-bottom:16px;">
+          <strong>Review Recommended:</strong> This scan found <strong>${baseFindings.length} finding${baseFindings.length !== 1 ? "s" : ""}</strong>.
+          ${counts.inactive > 0 ? `${counts.inactive} credential${counts.inactive !== 1 ? "s were" : " was"} inactive at scan time.` : ""}
+          ${counts.not_attempted > 0 ? `${counts.not_attempted} ${counts.not_attempted !== 1 ? "were" : "was"} not validated.` : ""}
+        </div>`;
+      } else {
+        execSummary = `<div style="padding:12px 16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;font-size:13px;color:#166534;line-height:1.6;margin-bottom:16px;">
+          <strong>Clean Scan:</strong> No findings detected in this scan.
+        </div>`;
+      }
 
-      const pdfHtml = `
-        <!doctype html>
-        <html>
-        <head>
-          <meta charset="UTF-8">
-          <title>Kingfisher Report</title>
-          <style>
-            * { box-sizing: border-box; }
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 16px; color: #0f172a; }
-            h1, h2, h3 { margin: 0 0 12px; }
-            .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px; }
-            .stat { padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; background: #f8fafc; }
-            .stat .label { font-size: 12px; text-transform: uppercase; color: #6b7280; letter-spacing: 0.05em; }
-            .stat .value { font-size: 22px; font-weight: 700; margin-top: 6px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 8px; table-layout: fixed; }
-            th, td { border: 1px solid #d1d5db; padding: 6px 8px; font-size: 11px; text-align: left; word-break: break-word; overflow-wrap: anywhere; }
-            th { background: #e5e7eb; }
-            .section { margin-bottom: 28px; }
-            .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #e0f2fe; color: #075985; font-weight: 700; font-size: 12px; margin-left: 8px; }
-            .access-list { list-style: none; padding-left: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
-            .access-entry { border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; background: #f8fafc; }
-            .access-head { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
-            .access-groups { margin: 0; padding-left: 16px; color: #1f2937; }
-            .meta { color: #4b5563; font-size: 13px; margin-bottom: 14px; }
-            .chart-wrapper { display: flex; gap: 14px; align-items: center; }
-            .legend { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
-            .legend span { display: inline-flex; align-items: center; gap: 6px; }
-            .legend .dot { width: 12px; height: 12px; border-radius: 4px; display: inline-block; }
-          </style>
-        </head>
-        <body>
-          <h1>Kingfisher Report</h1>
-          <div class="meta">Generated ${escapeHtml(new Date().toLocaleString())} · Scope: ${escapeHtml(scopeLabel)}</div>
+      const pdfHtml = `<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Kingfisher Scan Report</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; padding: 24px; color: #0f172a; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    h2 { font-size: 16px; margin: 20px 0 10px; border-bottom: 2px solid #e5e7eb; padding-bottom: 6px; }
+    .report-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 3px solid #0e7c56; }
+    .report-header h1 { color: #0e7c56; }
+    .report-date { color: #4b5563; font-size: 13px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 18px; }
+    .stat { padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; background: #f8fafc; }
+    .stat .label { font-size: 11px; text-transform: uppercase; color: #6b7280; letter-spacing: 0.04em; font-weight: 600; }
+    .stat .value { font-size: 22px; font-weight: 800; margin-top: 4px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; table-layout: fixed; }
+    th, td { border: 1px solid #d1d5db; padding: 6px 8px; font-size: 11px; text-align: left; word-break: break-word; overflow-wrap: anywhere; }
+    th { background: #f1f5f9; font-weight: 700; color: #374151; }
+    .section { margin-bottom: 24px; page-break-inside: avoid; }
+    .chart-wrapper { display: flex; gap: 14px; align-items: center; margin-top: 12px; }
+    .legend { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .legend .dot { width: 12px; height: 12px; border-radius: 4px; display: inline-block; }
+    @media print { body { padding: 12px; } .no-print { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="report-header">
+    <h1>Kingfisher Scan Report</h1>
+    <div class="report-date">${escapeHtml(new Date().toLocaleString())}<br>Scope: ${escapeHtml(scopeLabel)}</div>
+  </div>
 
-          <div class="section">
-            <h2>Dashboard</h2>
-            <div class="grid">
-              <div class="stat"><div class="label">Total Findings</div><div class="value">${baseFindings.length}</div></div>
-              <div class="stat"><div class="label">High Confidence</div><div class="value">${highConfidence}</div></div>
-              <div class="stat"><div class="label">Active Credentials</div><div class="value">${counts.active || 0}</div></div>
-              <div class="stat"><div class="label">Identities Mapped</div><div class="value">${accessMap.length}</div></div>
-            </div>
-            <div class="chart-wrapper">
-              ${statusImage ? `<img src="${statusImage}" alt="Status chart" style="max-width:280px; border:1px solid #d1d5db; border-radius:10px;">` : ""}
-              <div class="legend">
-                <span><span class="dot" style="background:#22c55e"></span> Active: ${counts.active || 0}</span>
-                <span><span class="dot" style="background:#f97316"></span> Inactive: ${counts.inactive || 0}</span>
-                <span><span class="dot" style="background:#38bdf8"></span> Not Attempted: ${counts.not_attempted || 0}</span>
-                <span><span class="dot" style="background:#9ca3af"></span> Unknown: ${counts.unknown || 0}</span>
-              </div>
-            </div>
-          </div>
+  ${metaHtml}
+  ${execSummary}
 
-          <div class="section">
-            <h2>${escapeHtml(scope === "filtered" ? "Findings (Filtered, Active first)" : "Findings (Active first)")}</h2>
-            <table>
-              <thead>
-                <tr>
-                  <th>Rule</th>
-                  <th>Finding ID</th>
-                  <th>File Path</th>
-                  <th>Status</th>
-                  <th>Line</th>
-                  <th>Git URL</th>
-                  <th>Snippet</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${findingsHtml}
-              </tbody>
-            </table>
-          </div>
+  <div class="section">
+    <h2>Summary</h2>
+    <div class="grid">
+      <div class="stat"><div class="label">Total Findings</div><div class="value">${baseFindings.length}</div></div>
+      <div class="stat"><div class="label">High Confidence</div><div class="value">${highConfidence}</div></div>
+      <div class="stat"><div class="label">Active</div><div class="value" style="color:#dc2626;">${counts.active || 0}</div></div>
+      <div class="stat"><div class="label">Inactive</div><div class="value" style="color:#f97316;">${counts.inactive || 0}</div></div>
+      <div class="stat"><div class="label">Not Validated</div><div class="value">${counts.not_attempted || 0}</div></div>
+      <div class="stat"><div class="label">Identities</div><div class="value">${(accessMap || []).length}</div></div>
+    </div>
+    <div class="chart-wrapper">
+      ${statusImage ? `<img src="${statusImage}" alt="Status chart" style="max-width:240px; border:1px solid #d1d5db; border-radius:10px;">` : ""}
+      <div class="legend">
+        <span><span class="dot" style="background:#22c55e"></span> Active: ${counts.active || 0}</span>
+        <span><span class="dot" style="background:#f97316"></span> Inactive: ${counts.inactive || 0}</span>
+        <span><span class="dot" style="background:#38bdf8"></span> Not Attempted: ${counts.not_attempted || 0}</span>
+        <span><span class="dot" style="background:#9ca3af"></span> Unknown: ${counts.unknown || 0}</span>
+      </div>
+    </div>
+  </div>
 
-        </body>
-        </html>
-      `;
+  ${Object.keys(ruleSummary).length > 1 ? `
+  <div class="section">
+    <h2>Findings by Rule</h2>
+    <table style="max-width:500px;">
+      <thead><tr><th>Rule</th><th>Count</th><th>Active</th></tr></thead>
+      <tbody>${ruleSummaryRows}</tbody>
+    </table>
+  </div>
+  ` : ""}
+
+  <div class="section">
+    <h2>Detailed Findings</h2>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:15%;">Rule</th>
+          <th style="width:10%;">Fingerprint</th>
+          <th style="width:22%;">File Path</th>
+          <th style="width:12%;">Status</th>
+          <th style="width:9%;">Confidence</th>
+          <th style="width:5%;">Line</th>
+          <th style="width:27%;">Git URL</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${findingsHtml}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="no-print" style="margin-top:24px;text-align:center;">
+    <button onclick="window.print()" style="padding:10px 24px;font-size:14px;font-weight:600;background:#0e7c56;color:#fff;border:none;border-radius:8px;cursor:pointer;">
+      Print / Save as PDF
+    </button>
+  </div>
+</body>
+</html>`;
 
       const win = window.open("", "_blank", "width=1200,height=900");
       if (!win) {
-        alert("Please allow pop-ups to download the Findings report.");
+        alert("Please allow pop-ups to view the Scan report.");
         return;
       }
       win.document.write(pdfHtml);
@@ -2283,49 +2807,168 @@
     }
 
     function generateAccessMapReport() {
-      if (!rawData) {
-        alert("Load a report before downloading an Access Map report.");
+      if (!Array.isArray(accessMap) || accessMap.length === 0) {
+        alert("No Access Map entries are available. Run a scan with --access-map first.");
         return;
       }
 
-      const accessListHtml = buildAccessMapListHtml({ includeMeta: true });
-      if (!accessListHtml) {
-        alert("No Access Map entries are available for this report.");
-        return;
-      }
+      // Compute stats
+      let totalResources = 0;
+      let totalPermissions = 0;
+      const allPermSet = new Set();
+      const providerCounts = {};
+      accessMap.forEach((entry) => {
+        const prov = (entry.provider || "unknown").toUpperCase();
+        providerCounts[prov] = (providerCounts[prov] || 0) + 1;
+        (entry.groups || []).forEach((g) => {
+          totalResources += (g.resources || []).length;
+          (g.permissions || []).forEach((p) => allPermSet.add(p));
+        });
+      });
+      totalPermissions = allPermSet.size;
 
-      const pdfHtml = `
-        <!doctype html>
-        <html>
-        <head>
-          <meta charset="UTF-8">
-          <title>Kingfisher Access Map Report</title>
-          <style>
-            * { box-sizing: border-box; }
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 16px; color: #0f172a; }
-            h1, h2 { margin: 0 0 12px; }
-            .meta { color: #4b5563; font-size: 13px; margin-bottom: 14px; }
-            .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #e0f2fe; color: #075985; font-weight: 700; font-size: 12px; margin-left: 8px; }
-            .access-list { list-style: none; padding-left: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
-            .access-entry { border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; background: #f8fafc; }
-            .access-head { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
-            .access-groups { margin: 0; padding-left: 16px; color: #1f2937; }
-          </style>
-        </head>
-        <body>
-          <h1>Kingfisher Access Map Report</h1>
-          <div class="meta">Generated ${escapeHtml(new Date().toLocaleString())}</div>
-          <div class="section">
-            <h2>Access Map</h2>
-            <ul class="access-list">${accessListHtml}</ul>
+      // Build per-identity cards
+      const identityCards = accessMap.map((entry, idx) => {
+        const groups = Array.isArray(entry.groups) ? entry.groups : [];
+        const findingId = getFindingIdFromAccessEntry(entry);
+        const tokenName = getTokenNameFromAccessEntry(entry);
+        const userId = getUserIdFromAccessEntry(entry);
+        const provider = (entry.provider || "Unknown").toUpperCase();
+
+        // Token details
+        let tokenHtml = "";
+        if (entry.token_details) {
+          const td = entry.token_details;
+          const fields = [];
+          if (td.username) fields.push(["Username", td.username]);
+          if (td.token_type) fields.push(["Token Type", td.token_type]);
+          if (td.account_type) fields.push(["Account Type", td.account_type]);
+          if (td.name) fields.push(["Token Name", td.name]);
+          if (td.email) fields.push(["Email", td.email]);
+          if (td.created_at) fields.push(["Created", td.created_at]);
+          if (td.expires_at) fields.push(["Expires", td.expires_at]);
+          if (td.last_used_at) fields.push(["Last Used", td.last_used_at]);
+          if (Array.isArray(td.scopes) && td.scopes.length) fields.push(["Scopes", td.scopes.join(", ")]);
+          if (fields.length) {
+            tokenHtml = `<div style="margin-top:10px;padding:10px 14px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;">
+              <div style="font-weight:700;font-size:12px;margin-bottom:6px;color:#0369a1;">Token Details</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;font-size:12px;">
+                ${fields.map(([k, v]) => `<div><strong style="color:#475569;">${escapeHtml(k)}:</strong> ${escapeHtml(String(v))}</div>`).join("")}
+              </div>
+            </div>`;
+          }
+        }
+
+        // Resource groups
+        const groupsHtml = groups.map((g) => {
+          const resources = g.resources || [];
+          const perms = g.permissions || [];
+          const resRows = resources.length
+            ? resources.map((r) => `<div style="padding:4px 8px;background:#fff;border:1px solid #e5e7eb;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;word-break:break-all;">${escapeHtml(String(r))}</div>`).join("")
+            : '<div style="color:#9ca3af;font-size:12px;font-style:italic;">No specific resources</div>';
+          const permTags = perms.length
+            ? perms.map((p) => `<span style="display:inline-block;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600;background:#ecfdf5;color:#16a34a;border:1px solid #bbf7d0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(p)}</span>`).join(" ")
+            : '<span style="color:#9ca3af;font-size:12px;font-style:italic;">No specific permissions</span>';
+          return `<div style="margin-top:10px;">
+            <div style="font-weight:600;font-size:12px;color:#374151;margin-bottom:6px;">Resources (${resources.length})</div>
+            <div style="display:flex;flex-direction:column;gap:4px;">${resRows}</div>
+            <div style="font-weight:600;font-size:12px;color:#374151;margin:10px 0 6px;">Permissions (${perms.length})</div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;">${permTags}</div>
+          </div>`;
+        }).join("");
+
+        // Meta line
+        const metaParts = [];
+        if (findingId) metaParts.push(`<strong>Fingerprint:</strong> <code style="font-size:10px;">${escapeHtml(findingId.substring(0, 16))}</code>`);
+        if (tokenName) metaParts.push(`<strong>Token:</strong> ${escapeHtml(tokenName)}`);
+        if (userId) metaParts.push(`<strong>User:</strong> ${escapeHtml(userId)}`);
+        const metaLine = metaParts.length
+          ? `<div style="font-size:12px;color:#64748b;margin-top:6px;">${metaParts.join(" · ")}</div>`
+          : "";
+
+        return `<div style="page-break-inside:avoid;border:1px solid #d1d5db;border-radius:8px;padding:16px;margin-bottom:12px;background:#fff;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+            <span style="font-size:16px;">👤</span>
+            <div>
+              <div style="font-size:15px;font-weight:700;">${escapeHtml(entry.account || "(identity)")}</div>
+              <span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;background:#e0f2fe;color:#075985;margin-top:2px;">${escapeHtml(provider)}</span>
+            </div>
           </div>
-        </body>
-        </html>
-      `;
+          ${metaLine}
+          ${tokenHtml}
+          ${groupsHtml}
+        </div>`;
+      }).join("");
+
+      // Provider summary
+      const providerSummaryRows = Object.entries(providerCounts)
+        .sort((a, b) => b[1] - a[1])
+        .map(([p, c]) => `<tr><td>${escapeHtml(p)}</td><td>${c}</td></tr>`)
+        .join("");
+
+      const pdfHtml = `<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Kingfisher Access Map Report</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; padding: 24px; color: #0f172a; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    h2 { font-size: 16px; margin: 20px 0 10px; border-bottom: 2px solid #e5e7eb; padding-bottom: 6px; }
+    .report-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 3px solid #0e7c56; }
+    .report-header h1 { color: #0e7c56; }
+    .report-date { color: #4b5563; font-size: 13px; text-align: right; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 18px; }
+    .stat { padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; background: #f8fafc; }
+    .stat .label { font-size: 11px; text-transform: uppercase; color: #6b7280; letter-spacing: 0.04em; font-weight: 600; }
+    .stat .value { font-size: 22px; font-weight: 800; margin-top: 4px; }
+    table { border-collapse: collapse; margin-top: 8px; }
+    th, td { border: 1px solid #d1d5db; padding: 6px 12px; font-size: 12px; text-align: left; }
+    th { background: #f1f5f9; font-weight: 700; color: #374151; }
+    .section { margin-bottom: 24px; }
+    code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+    @media print { body { padding: 12px; } .no-print { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="report-header">
+    <h1>Kingfisher Access Map Report</h1>
+    <div class="report-date">${escapeHtml(new Date().toLocaleString())}</div>
+  </div>
+
+  <div class="section">
+    <h2>Summary</h2>
+    <div class="grid">
+      <div class="stat"><div class="label">Identities</div><div class="value">${accessMap.length}</div></div>
+      <div class="stat"><div class="label">Total Resources</div><div class="value">${totalResources}</div></div>
+      <div class="stat"><div class="label">Unique Permissions</div><div class="value">${totalPermissions}</div></div>
+      <div class="stat"><div class="label">Providers</div><div class="value">${Object.keys(providerCounts).length}</div></div>
+    </div>
+    ${Object.keys(providerCounts).length > 1 ? `
+    <table>
+      <thead><tr><th>Provider</th><th>Identities</th></tr></thead>
+      <tbody>${providerSummaryRows}</tbody>
+    </table>
+    ` : ""}
+  </div>
+
+  <div class="section">
+    <h2>Identities &amp; Access</h2>
+    ${identityCards}
+  </div>
+
+  <div class="no-print" style="margin-top:24px;text-align:center;">
+    <button onclick="window.print()" style="padding:10px 24px;font-size:14px;font-weight:600;background:#0e7c56;color:#fff;border:none;border-radius:8px;cursor:pointer;">
+      Print / Save as PDF
+    </button>
+  </div>
+</body>
+</html>`;
 
       const win = window.open("", "_blank", "width=1200,height=900");
       if (!win) {
-        alert("Please allow pop-ups to download the Access Map report.");
+        alert("Please allow pop-ups to view the Access Map report.");
         return;
       }
       win.document.write(pdfHtml);
@@ -2573,6 +3216,10 @@
         revokeBox.classList.add("hidden");
         revokeCmd.textContent = "";
       }
+
+      // Blast radius
+      currentDetailFinding = f;
+      renderBlastRadius(f);
     }
 
     function getFileUrlFromFinding(finding) {
@@ -2583,84 +3230,874 @@
       return "";
     }
 
+    function getAccessMapForFingerprint(fingerprint) {
+      if (!fingerprint || !Array.isArray(accessMap)) return [];
+      return accessMap.filter((entry) => entry.fingerprint === fingerprint);
+    }
+
+    function countResources(entries) {
+      let total = 0;
+      entries.forEach((entry) => {
+        (entry.groups || []).forEach((group) => {
+          total += (group.resources || []).length;
+        });
+      });
+      return total;
+    }
+
+    function countPermissions(entries) {
+      const permSet = new Set();
+      entries.forEach((entry) => {
+        (entry.groups || []).forEach((group) => {
+          (group.permissions || []).forEach((p) => permSet.add(p));
+        });
+      });
+      return permSet.size;
+    }
+
+    function generateRiskRationale(finding, accessEntries) {
+      const rule = finding.rule || {};
+      const fd = finding.finding || {};
+      const statusRaw = fd.validation && fd.validation.status ? String(fd.validation.status) : "";
+      const normalizedStatus = normalizeValidationStatus(statusRaw);
+      const isActive = normalizedStatus === "active";
+
+      if (!accessEntries || accessEntries.length === 0) {
+        if (isActive) {
+          return {
+            level: "medium",
+            text: `This is an active ${escapeHtml(rule.name || "credential")} found in ${escapeHtml(fd.path || "the codebase")}. No access map data is available, but the credential validated successfully, indicating it grants live access to the target service.`,
+          };
+        }
+        return {
+          level: "none",
+          text: "No access map data is linked to this finding. Run a scan with --access-map to map the blast radius of validated credentials.",
+        };
+      }
+
+      const providers = [...new Set(accessEntries.map((e) => (e.provider || "").toUpperCase()).filter(Boolean))];
+      const resourceCount = countResources(accessEntries);
+      const permCount = countPermissions(accessEntries);
+      const identityCount = accessEntries.length;
+
+      // Categorize resources
+      const resourceTypes = {};
+      accessEntries.forEach((entry) => {
+        (entry.groups || []).forEach((group) => {
+          (group.resources || []).forEach((r) => {
+            const rStr = String(r);
+            let type = "resource";
+            if (/s3|bucket|storage|blob/i.test(rStr)) type = "storage bucket";
+            else if (/lambda|function|cloud.run/i.test(rStr)) type = "serverless function";
+            else if (/iam|role|policy/i.test(rStr)) type = "IAM resource";
+            else if (/secret|vault|kms/i.test(rStr)) type = "secret/key";
+            else if (/ec2|instance|vm|compute/i.test(rStr)) type = "compute instance";
+            else if (/dynamodb|database|rds|sql/i.test(rStr)) type = "database";
+            else if (/repo|repository/i.test(rStr)) type = "repository";
+            resourceTypes[type] = (resourceTypes[type] || 0) + 1;
+          });
+        });
+      });
+
+      const typeDescriptions = Object.entries(resourceTypes)
+        .sort((a, b) => b[1] - a[1])
+        .map(([type, count]) => `${count} ${type}${count > 1 ? "s" : ""}`)
+        .join(", ");
+
+      // Determine risk level
+      let level = "low";
+      if (isActive && resourceCount > 10) level = "critical";
+      else if (isActive && resourceCount > 3) level = "high";
+      else if (isActive && resourceCount > 0) level = "medium";
+      else if (!isActive && resourceCount > 0) level = "low";
+
+      // Check for dangerous permissions
+      const allPerms = [];
+      accessEntries.forEach((e) => (e.groups || []).forEach((g) => allPerms.push(...(g.permissions || []))));
+      const dangerousPerms = allPerms.filter((p) =>
+        /admin|full.?control|owner|delete|write.*all|manage|superuser|\*/i.test(p)
+      );
+      if (isActive && dangerousPerms.length > 0) level = "critical";
+
+      // Check for token details with scopes
+      const scopeInfo = [];
+      accessEntries.forEach((entry) => {
+        if (entry.token_details && Array.isArray(entry.token_details.scopes)) {
+          scopeInfo.push(...entry.token_details.scopes);
+        }
+      });
+
+      let text = "";
+      if (isActive) {
+        text = `This active ${escapeHtml(rule.name || "credential")} grants access to <strong>${resourceCount} resource${resourceCount !== 1 ? "s" : ""}</strong> across <strong>${identityCount} identit${identityCount !== 1 ? "ies" : "y"}</strong> on ${providers.join(", ")}.`;
+        if (typeDescriptions) {
+          text += ` Accessible resources include ${typeDescriptions}.`;
+        }
+        if (dangerousPerms.length > 0) {
+          text += ` <strong>Warning:</strong> This credential has elevated privileges including ${dangerousPerms.slice(0, 3).map((p) => "<code>" + escapeHtml(p) + "</code>").join(", ")}${dangerousPerms.length > 3 ? ` and ${dangerousPerms.length - 3} more` : ""}.`;
+        }
+        if (scopeInfo.length > 0) {
+          text += ` Token scopes: ${scopeInfo.slice(0, 5).map((s) => escapeHtml(s)).join(", ")}${scopeInfo.length > 5 ? ` (+${scopeInfo.length - 5} more)` : ""}.`;
+        }
+      } else {
+        text = `This ${escapeHtml(rule.name || "credential")} has access map data showing <strong>${resourceCount} resource${resourceCount !== 1 ? "s" : ""}</strong> that would be accessible if the credential were active.`;
+        if (typeDescriptions) {
+          text += ` Resources include ${typeDescriptions}.`;
+        }
+      }
+
+      return { level, text };
+    }
+
+    function renderBlastRadius(f) {
+      const finding = f.finding || {};
+      const fingerprint = finding.fingerprint || "";
+      const blastSection = document.getElementById("fd-blast-radius");
+      const blastEntries = document.getElementById("fd-blast-entries");
+      const blastCount = document.getElementById("fd-blast-count");
+      const rationaleEl = document.getElementById("fd-risk-rationale");
+
+      const entries = getAccessMapForFingerprint(fingerprint);
+      const { level, text } = generateRiskRationale(f, entries);
+
+      // Always show the blast radius section
+      blastSection.classList.remove("hidden");
+
+      // Risk rationale
+      rationaleEl.className = "risk-rationale " + level;
+      rationaleEl.innerHTML = text;
+
+      // Count
+      const resourceTotal = countResources(entries);
+      blastCount.textContent = entries.length > 0
+        ? `${entries.length} identit${entries.length !== 1 ? "ies" : "y"}, ${resourceTotal} resource${resourceTotal !== 1 ? "s" : ""}`
+        : "No access data";
+
+      // Render entries
+      blastEntries.innerHTML = "";
+      if (entries.length === 0) return;
+
+      entries.forEach((entry) => {
+        const identity = document.createElement("div");
+        identity.className = "blast-identity";
+
+        const header = document.createElement("div");
+        header.className = "blast-identity__header";
+
+        const providerBadge = document.createElement("span");
+        providerBadge.className = "badge " + providerBadgeClass(entry.provider);
+        providerBadge.textContent = (entry.provider || "").toUpperCase();
+        header.appendChild(providerBadge);
+
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = entry.account || "(identity)";
+        header.appendChild(nameSpan);
+
+        // Token info summary
+        if (entry.token_details) {
+          const tokenInfo = document.createElement("span");
+          tokenInfo.style.fontSize = "12px";
+          tokenInfo.style.color = "var(--text-muted)";
+          const parts = [];
+          if (entry.token_details.username) parts.push(entry.token_details.username);
+          if (entry.token_details.token_type) parts.push(entry.token_details.token_type);
+          if (parts.length) tokenInfo.textContent = "(" + parts.join(" · ") + ")";
+          header.appendChild(tokenInfo);
+        }
+
+        identity.appendChild(header);
+
+        const resList = document.createElement("ul");
+        resList.className = "blast-resource-list";
+
+        (entry.groups || []).forEach((group) => {
+          const resources = group.resources || [];
+          const perms = group.permissions || [];
+
+          if (resources.length === 0 && perms.length > 0) {
+            const item = document.createElement("li");
+            item.className = "blast-resource-item";
+            const name = document.createElement("div");
+            name.className = "blast-resource-name";
+            name.textContent = "Project-wide / Unscoped";
+            item.appendChild(name);
+            const permDiv = document.createElement("div");
+            permDiv.className = "blast-perms";
+            perms.forEach((p) => {
+              const tag = document.createElement("span");
+              tag.className = "blast-perm-tag";
+              tag.textContent = p;
+              permDiv.appendChild(tag);
+            });
+            item.appendChild(permDiv);
+            resList.appendChild(item);
+          }
+
+          resources.forEach((resName) => {
+            const item = document.createElement("li");
+            item.className = "blast-resource-item";
+            const name = document.createElement("div");
+            name.className = "blast-resource-name";
+            name.textContent = String(resName);
+
+            // Add console link if available
+            const { resourceType, resourceName } = extractResourceParts(String(resName));
+            const consoleLink = buildResourceConsoleLink(entry.provider, resourceType, resourceName);
+            if (consoleLink) {
+              const a = document.createElement("a");
+              a.href = consoleLink;
+              a.target = "_blank";
+              a.rel = "noopener noreferrer";
+              a.textContent = " (open in console)";
+              a.style.fontSize = "11px";
+              a.style.fontFamily = "inherit";
+              a.style.color = "var(--brand)";
+              name.appendChild(a);
+            }
+
+            item.appendChild(name);
+
+            if (perms.length > 0) {
+              const permDiv = document.createElement("div");
+              permDiv.className = "blast-perms";
+              perms.forEach((p) => {
+                const tag = document.createElement("span");
+                tag.className = "blast-perm-tag";
+                tag.textContent = p;
+                permDiv.appendChild(tag);
+              });
+              item.appendChild(permDiv);
+            }
+            resList.appendChild(item);
+          });
+        });
+
+        identity.appendChild(resList);
+        blastEntries.appendChild(identity);
+      });
+    }
+
+    function exportSingleFindingRiskReport(f) {
+      const rule = f.rule || {};
+      const finding = f.finding || {};
+      const fingerprint = finding.fingerprint || "";
+      const entries = getAccessMapForFingerprint(fingerprint);
+      const { level, text: rationaleText } = generateRiskRationale(f, entries);
+      const statusRaw = finding.validation && finding.validation.status ? String(finding.validation.status) : "Unknown";
+      const gitUrl = getFileUrlFromFinding(finding);
+
+      const levelColors = {
+        critical: { bg: "#fef2f2", border: "#fca5a5", text: "#991b1b" },
+        high: { bg: "#fff7ed", border: "#fdba74", text: "#9a3412" },
+        medium: { bg: "#fffbeb", border: "#fde68a", text: "#92400e" },
+        low: { bg: "#f0fdf4", border: "#bbf7d0", text: "#166534" },
+        none: { bg: "#f8fafc", border: "#e2e8f0", text: "#475569" },
+      };
+      const colors = levelColors[level] || levelColors.none;
+
+      let accessHtml = "";
+      if (entries.length > 0) {
+        accessHtml = entries.map((entry) => {
+          const groups = (entry.groups || []).map((g) => {
+            const resList = (g.resources || []).map((r) => `<li><code>${escapeHtml(String(r))}</code></li>`).join("");
+            const permList = (g.permissions || []).map((p) => `<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:#ecfdf5;color:#16a34a;border:1px solid #bbf7d0;margin:2px;">${escapeHtml(p)}</span>`).join(" ");
+            return `<div style="margin-bottom:12px;">
+              <div style="font-weight:600;margin-bottom:4px;">Resources:</div>
+              <ul style="margin:0;padding-left:20px;">${resList || "<li>No specific resources</li>"}</ul>
+              <div style="font-weight:600;margin:8px 0 4px;">Permissions:</div>
+              <div>${permList || "No specific permissions"}</div>
+            </div>`;
+          }).join("");
+
+          let tokenHtml = "";
+          if (entry.token_details) {
+            const td = entry.token_details;
+            const fields = [];
+            if (td.username) fields.push(["Username", td.username]);
+            if (td.token_type) fields.push(["Token Type", td.token_type]);
+            if (td.account_type) fields.push(["Account Type", td.account_type]);
+            if (td.name) fields.push(["Token Name", td.name]);
+            if (td.email) fields.push(["Email", td.email]);
+            if (td.created_at) fields.push(["Created", td.created_at]);
+            if (td.expires_at) fields.push(["Expires", td.expires_at]);
+            if (td.last_used_at) fields.push(["Last Used", td.last_used_at]);
+            if (Array.isArray(td.scopes) && td.scopes.length) fields.push(["Scopes", td.scopes.join(", ")]);
+            if (fields.length) {
+              tokenHtml = `<div style="margin-top:10px;padding:10px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;">
+                <div style="font-weight:700;font-size:13px;margin-bottom:6px;">Token Details</div>
+                ${fields.map(([k, v]) => `<div style="font-size:12px;"><strong>${escapeHtml(k)}:</strong> ${escapeHtml(String(v))}</div>`).join("")}
+              </div>`;
+            }
+          }
+
+          return `<div style="border:1px solid #d1d5db;border-radius:8px;padding:14px;margin-bottom:10px;background:#f8fafc;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+              <span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700;background:#e0f2fe;color:#075985;">${escapeHtml((entry.provider || "").toUpperCase())}</span>
+              <strong>${escapeHtml(entry.account || "(identity)")}</strong>
+            </div>
+            ${groups}
+            ${tokenHtml}
+          </div>`;
+        }).join("");
+      }
+
+      const reportHtml = `<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Risk Report: ${escapeHtml(rule.name || rule.id || "Finding")}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; padding: 24px; color: #0f172a; max-width: 900px; margin: 0 auto; }
+    h1 { font-size: 22px; margin: 0 0 6px; }
+    h2 { font-size: 17px; margin: 20px 0 10px; border-bottom: 2px solid #e5e7eb; padding-bottom: 6px; }
+    .meta { color: #4b5563; font-size: 13px; margin-bottom: 20px; }
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+    .detail-item { padding: 8px 12px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 6px; }
+    .detail-item label { display: block; font-size: 11px; text-transform: uppercase; color: #6b7280; letter-spacing: 0.04em; font-weight: 600; }
+    .detail-item div { font-size: 14px; font-weight: 500; margin-top: 2px; word-break: break-all; }
+    .snippet { background: #1e293b; color: #e2e8f0; padding: 14px; border-radius: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; margin: 10px 0; }
+    .rationale { padding: 14px 18px; border-radius: 8px; font-size: 14px; line-height: 1.7; margin-bottom: 16px; }
+    code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+    @media print { body { padding: 12px; } .no-print { display: none; } }
+  </style>
+</head>
+<body>
+  <h1>Risk Report: ${escapeHtml(rule.name || rule.id || "")}</h1>
+  <div class="meta">Generated ${escapeHtml(new Date().toLocaleString())} · Fingerprint: ${escapeHtml(fingerprint)}</div>
+
+  <h2>Risk Assessment</h2>
+  <div class="rationale" style="background:${colors.bg};border:1px solid ${colors.border};color:${colors.text};">
+    <strong style="text-transform:uppercase;">${escapeHtml(level)} risk</strong><br>
+    ${rationaleText}
+  </div>
+
+  <h2>Finding Details</h2>
+  <div class="detail-grid">
+    <div class="detail-item"><label>Rule</label><div>${escapeHtml(rule.name || "")} (${escapeHtml(rule.id || "")})</div></div>
+    <div class="detail-item"><label>Validation</label><div>${escapeHtml(statusRaw)}</div></div>
+    <div class="detail-item"><label>Confidence</label><div>${escapeHtml(finding.confidence || "")}</div></div>
+    <div class="detail-item"><label>Entropy</label><div>${finding.entropy != null ? escapeHtml(String(finding.entropy)) : "—"}</div></div>
+    <div class="detail-item" style="grid-column:span 2;"><label>File Path</label><div>${escapeHtml(finding.path || "")}</div></div>
+    ${gitUrl ? `<div class="detail-item" style="grid-column:span 2;"><label>Git URL</label><div><a href="${escapeHtml(gitUrl)}" target="_blank">${escapeHtml(gitUrl)}</a></div></div>` : ""}
+    ${finding.git_metadata && finding.git_metadata.commit ? `<div class="detail-item"><label>Commit</label><div>${escapeHtml(finding.git_metadata.commit.id ? finding.git_metadata.commit.id.substring(0, 8) : "")}</div></div>` : ""}
+    ${finding.git_metadata && finding.git_metadata.commit && finding.git_metadata.commit.committer ? `<div class="detail-item"><label>Committer</label><div>${escapeHtml(finding.git_metadata.commit.committer.email || "")}</div></div>` : ""}
+  </div>
+
+  <div style="font-weight:600;font-size:12px;text-transform:uppercase;color:#6b7280;margin-bottom:6px;">Match Snippet</div>
+  <div class="snippet">${escapeHtml(finding.snippet || "")}</div>
+
+  ${entries.length > 0 ? `
+  <h2>Blast Radius (${entries.length} Identit${entries.length !== 1 ? "ies" : "y"}, ${countResources(entries)} Resource${countResources(entries) !== 1 ? "s" : ""})</h2>
+  ${accessHtml}
+  ` : `
+  <h2>Blast Radius</h2>
+  <p style="color:#6b7280;">No access map data available. Run with <code>--access-map</code> to map credential blast radius.</p>
+  `}
+
+  <div class="no-print" style="margin-top:24px;text-align:center;">
+    <button onclick="window.print()" style="padding:10px 24px;font-size:14px;font-weight:600;background:#0e7c56;color:#fff;border:none;border-radius:8px;cursor:pointer;">
+      Print / Save as PDF
+    </button>
+  </div>
+</body>
+</html>`;
+
+      const win = window.open("", "_blank", "width=1000,height=900");
+      if (!win) {
+        alert("Please allow pop-ups to open the risk report.");
+        return;
+      }
+      win.document.write(reportHtml);
+      win.document.close();
+      win.focus();
+    }
+
+    function generateRiskReport({ activeOnly = false } = {}) {
+      if (!findings || findings.length === 0) {
+        alert("No findings loaded. Load a report first.");
+        return;
+      }
+
+      let pool = findings.slice();
+      if (activeOnly) {
+        pool = pool.filter((f) => {
+          const fd = f.finding || {};
+          return normalizeValidationStatus(fd.validation && fd.validation.status ? fd.validation.status : "") === "active";
+        });
+        if (pool.length === 0) {
+          alert("No active credentials found. Uncheck 'Active credentials only' to include all findings.");
+          return;
+        }
+      }
+
+      // Sort: active first, then by rule name
+      const statusOrder = { active: 0, inactive: 1, not_attempted: 2, unknown: 3 };
+      const sorted = pool.sort((a, b) => {
+        const fa = a.finding || {};
+        const fb = b.finding || {};
+        const keyA = normalizeValidationStatus(fa.validation && fa.validation.status ? fa.validation.status : "");
+        const keyB = normalizeValidationStatus(fb.validation && fb.validation.status ? fb.validation.status : "");
+        const sa = statusOrder.hasOwnProperty(keyA) ? statusOrder[keyA] : 4;
+        const sb = statusOrder.hasOwnProperty(keyB) ? statusOrder[keyB] : 4;
+        if (sa !== sb) return sa - sb;
+        const ra = (a.rule && (a.rule.name || a.rule.id)) || "";
+        const rb = (b.rule && (b.rule.name || b.rule.id)) || "";
+        return ra.localeCompare(rb);
+      });
+
+      const counts = calculateValidationCounts(sorted);
+      const riskScopeLabel = activeOnly ? "Active credentials only" : "All findings";
+      const findingsWithAccess = sorted.filter((f) => {
+        const fp = f.finding && f.finding.fingerprint ? f.finding.fingerprint : "";
+        return getAccessMapForFingerprint(fp).length > 0;
+      });
+
+      const levelColors = {
+        critical: { bg: "#fef2f2", border: "#fca5a5", text: "#991b1b" },
+        high: { bg: "#fff7ed", border: "#fdba74", text: "#9a3412" },
+        medium: { bg: "#fffbeb", border: "#fde68a", text: "#92400e" },
+        low: { bg: "#f0fdf4", border: "#bbf7d0", text: "#166534" },
+        none: { bg: "#f8fafc", border: "#e2e8f0", text: "#475569" },
+      };
+
+      let findingSections = "";
+      sorted.forEach((f, idx) => {
+        const rule = f.rule || {};
+        const finding = f.finding || {};
+        const fp = finding.fingerprint || "";
+        const entries = getAccessMapForFingerprint(fp);
+        const { level, text: rationaleText } = generateRiskRationale(f, entries);
+        const colors = levelColors[level] || levelColors.none;
+        const statusRaw = finding.validation && finding.validation.status ? String(finding.validation.status) : "Unknown";
+        const gitUrl = getFileUrlFromFinding(finding);
+
+        let accessSummary = "";
+        if (entries.length > 0) {
+          const resCount = countResources(entries);
+          const permCount = countPermissions(entries);
+          accessSummary = entries.map((entry) => {
+            const resources = [];
+            (entry.groups || []).forEach((g) => {
+              (g.resources || []).forEach((r) => resources.push(String(r)));
+            });
+            const perms = [];
+            (entry.groups || []).forEach((g) => (g.permissions || []).forEach((p) => perms.push(p)));
+            const uniquePerms = [...new Set(perms)];
+            return `<div style="margin:8px 0;padding:10px;border:1px solid #e5e7eb;border-radius:6px;background:#f8fafc;">
+              <div style="font-weight:700;font-size:13px;margin-bottom:6px;">
+                <span style="display:inline-block;padding:1px 6px;border-radius:999px;font-size:11px;background:#e0f2fe;color:#075985;margin-right:6px;">${escapeHtml((entry.provider || "").toUpperCase())}</span>
+                ${escapeHtml(entry.account || "")}
+              </div>
+              ${resources.length ? `<div style="font-size:12px;"><strong>Resources (${resources.length}):</strong> ${resources.slice(0, 8).map((r) => "<code>" + escapeHtml(r) + "</code>").join(", ")}${resources.length > 8 ? ` +${resources.length - 8} more` : ""}</div>` : ""}
+              ${uniquePerms.length ? `<div style="font-size:12px;margin-top:4px;"><strong>Permissions (${uniquePerms.length}):</strong> ${uniquePerms.slice(0, 6).map((p) => escapeHtml(p)).join(", ")}${uniquePerms.length > 6 ? ` +${uniquePerms.length - 6} more` : ""}</div>` : ""}
+            </div>`;
+          }).join("");
+        }
+
+        findingSections += `
+          <div style="page-break-inside:avoid;border:1px solid #d1d5db;border-radius:8px;padding:16px;margin-bottom:16px;background:#fff;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+              <div style="font-size:16px;font-weight:700;">${idx + 1}. ${escapeHtml(rule.name || rule.id || "Unknown Rule")}</div>
+              <span style="display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;text-transform:uppercase;background:${colors.bg};border:1px solid ${colors.border};color:${colors.text};">${escapeHtml(level)}</span>
+            </div>
+            <div style="padding:10px 14px;border-radius:6px;background:${colors.bg};border:1px solid ${colors.border};color:${colors.text};font-size:13px;line-height:1.6;margin-bottom:12px;">
+              ${rationaleText}
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;margin-bottom:10px;">
+              <div><strong>Path:</strong> ${escapeHtml(finding.path || "—")}</div>
+              <div><strong>Line:</strong> ${finding.line != null ? finding.line : "—"}</div>
+              <div><strong>Validation:</strong> ${escapeHtml(statusRaw)}</div>
+              <div><strong>Confidence:</strong> ${escapeHtml(finding.confidence || "—")}</div>
+              ${gitUrl ? `<div style="grid-column:span 2;"><strong>URL:</strong> <a href="${escapeHtml(gitUrl)}" style="color:#1d4ed8;">${escapeHtml(gitUrl)}</a></div>` : ""}
+            </div>
+            <div style="background:#1e293b;color:#e2e8f0;padding:10px;border-radius:6px;font-family:monospace;font-size:11px;white-space:pre-wrap;word-break:break-all;margin-bottom:10px;">${escapeHtml((finding.snippet || "").substring(0, 300))}</div>
+            ${accessSummary ? `<div style="margin-top:8px;"><div style="font-weight:700;font-size:13px;margin-bottom:6px;">Blast Radius</div>${accessSummary}</div>` : ""}
+          </div>`;
+      });
+
+      const reportHtml = `<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Kingfisher Risk Report</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; padding: 24px; color: #0f172a; }
+    h1 { font-size: 24px; margin: 0 0 4px; }
+    h2 { font-size: 18px; margin: 24px 0 12px; }
+    .meta { color: #4b5563; font-size: 13px; margin-bottom: 20px; }
+    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 20px; }
+    .summary-stat { padding: 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f8fafc; }
+    .summary-stat .label { font-size: 11px; text-transform: uppercase; color: #6b7280; letter-spacing: 0.04em; font-weight: 600; }
+    .summary-stat .value { font-size: 24px; font-weight: 800; margin-top: 4px; }
+    code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+    @media print { body { padding: 12px; font-size: 11px; } .no-print { display: none; } }
+  </style>
+</head>
+<body>
+  <h1>Kingfisher Risk Report</h1>
+  <div class="meta">
+    Generated ${escapeHtml(new Date().toLocaleString())} ·
+    Scope: ${escapeHtml(riskScopeLabel)} ·
+    ${sorted.length} finding${sorted.length !== 1 ? "s" : ""} ·
+    ${findingsWithAccess.length} with access map data
+  </div>
+
+  <div class="summary-grid">
+    <div class="summary-stat"><div class="label">Total Findings</div><div class="value">${sorted.length}</div></div>
+    <div class="summary-stat"><div class="label">Active Credentials</div><div class="value" style="color:#dc2626;">${counts.active || 0}</div></div>
+    <div class="summary-stat"><div class="label">With Blast Radius</div><div class="value">${findingsWithAccess.length}</div></div>
+    <div class="summary-stat"><div class="label">Identities Mapped</div><div class="value">${(accessMap || []).length}</div></div>
+  </div>
+
+  <h2>Findings by Risk</h2>
+  ${findingSections}
+
+  <div class="no-print" style="margin-top:24px;text-align:center;">
+    <button onclick="window.print()" style="padding:10px 24px;font-size:14px;font-weight:600;background:#0e7c56;color:#fff;border:none;border-radius:8px;cursor:pointer;">Print / Save as PDF</button>
+  </div>
+</body>
+</html>`;
+
+      const win = window.open("", "_blank", "width=1100,height=900");
+      if (!win) {
+        alert("Please allow pop-ups to view the risk report.");
+        return;
+      }
+      win.document.write(reportHtml);
+      win.document.close();
+      win.focus();
+    }
+
     function renderAccessMapTree(filter = "") {
-      const root = document.getElementById("am-tree-root");
-      root.innerHTML = "";
+      const list = document.getElementById("am-card-list");
+      list.innerHTML = "";
       const filterLower = (filter || "").toLowerCase();
 
       filteredAccessMapView = buildRenderableAccessMap(filterLower);
       const hasAccess = Array.isArray(accessMap) && accessMap.length > 0;
       syncAccessMapUi(hasAccess);
+      renderAccessMapStats();
 
       if (!filteredAccessMapView || filteredAccessMapView.length === 0) {
-        root.innerHTML =
-          '<div style="padding:16px; text-align:center; color:var(--text-muted); font-size:13px;">No access map data available</div>';
+        list.innerHTML =
+          '<div style="padding:32px 16px; text-align:center; color:var(--text-muted); font-size:13px;">No access map data available</div>';
         return;
       }
 
+      const frag = document.createDocumentFragment();
       filteredAccessMapView.forEach((entry) => {
-        const identity = entry.identity;
-        const account = formatIdentityLabel(identity);
-        const identityNameMatches = entry.identityNameMatches;
-        const idNode = createTreeNode(account, "identity", true, identity.provider);
-        idNode.container.style.borderLeft = "none";
-        idNode.container.style.marginLeft = "0";
-        idNode.header.addEventListener("click", (e) => {
-          e.stopPropagation();
-          showAccessDetail("identity", identity);
-          toggleNode(idNode.childrenContainer, idNode.toggleIcon);
-        });
-        root.appendChild(idNode.container);
+        frag.appendChild(buildIdentityCard(entry));
+      });
+      list.appendChild(frag);
+    }
 
-        const resGroup = createTreeNode("Resources", "group", true);
-        resGroup.header.addEventListener("click", (e) => {
-          e.stopPropagation();
-          toggleNode(resGroup.childrenContainer, resGroup.toggleIcon);
-        });
-        idNode.childrenContainer.appendChild(resGroup.container);
+    function renderAccessMapStats() {
+      const bar = document.getElementById("am-stats-bar");
+      if (!bar) return;
+      if (!accessMap || accessMap.length === 0) {
+        bar.classList.add("hidden");
+        return;
+      }
 
-        entry.groups.forEach((group) => {
-          const resourcesToShow = Array.isArray(group.resources) ? group.resources : [];
-          const perms = Array.isArray(group.permissions) ? group.permissions : [];
-
-          if (resourcesToShow && resourcesToShow.length > 0) {
-            resourcesToShow.forEach((resName) => {
-              const resNode = createTreeNode(String(resName), "resource", false);
-              resNode.header.addEventListener("click", (e) => {
-                e.stopPropagation();
-                showAccessDetail("resource", {
-                  name: resName,
-                  provider: identity.provider,
-                  permissions: perms,
-                });
-                toggleNode(resNode.childrenContainer, resNode.toggleIcon);
-              });
-              resGroup.childrenContainer.appendChild(resNode.container);
-
-              if (perms.length > 0) {
-                perms.forEach((perm) => {
-                  const permNode = createLeafNode(String(perm), "permission");
-                  permNode.addEventListener("click", (e) => {
-                    e.stopPropagation();
-                    showAccessDetail("permission", { name: perm });
-                  });
-                  resNode.childrenContainer.appendChild(permNode);
-                });
-              } else {
-                const empty = createLeafNode("No specific permissions listed", "group");
-                resNode.childrenContainer.appendChild(empty);
-              }
-            });
-          } else if (perms.length > 0 && (!filterLower || identityNameMatches)) {
-            const wildNode = createTreeNode("Project-wide / Unscoped", "resource", false);
-            resGroup.childrenContainer.appendChild(wildNode.container);
-            perms.forEach((perm) => {
-              const pNode = createLeafNode(String(perm), "permission");
-              wildNode.childrenContainer.appendChild(pNode);
-            });
-          }
+      let totalRes = 0;
+      const permSet = new Set();
+      const providerSet = new Set();
+      accessMap.forEach((entry) => {
+        providerSet.add((entry.provider || "unknown").toUpperCase());
+        (entry.groups || []).forEach((g) => {
+          totalRes += (g.resources || []).length;
+          (g.permissions || []).forEach((p) => permSet.add(p));
         });
       });
+
+      bar.classList.remove("hidden");
+      bar.innerHTML = `
+        <div class="am-stat"><span class="am-stat-value">${accessMap.length}</span><span class="am-stat-label">Identities</span></div>
+        <div class="am-stat"><span class="am-stat-value">${totalRes}</span><span class="am-stat-label">Resources</span></div>
+        <div class="am-stat"><span class="am-stat-value">${permSet.size}</span><span class="am-stat-label">Unique Permissions</span></div>
+        <div class="am-stat">${[...providerSet].map((p) => '<span class="badge ' + providerBadgeClass(p) + '">' + escapeHtml(p) + '</span>').join(" ")}</div>
+      `;
+    }
+
+    function buildIdentityCard(entry) {
+      const identity = entry.identity;
+      const groups = entry.groups;
+      const provider = (identity.provider || "unknown");
+      const account = identity.account || "(unknown identity)";
+      const fingerprint = identity.fingerprint || "";
+
+      // Count resources and collect all permissions
+      let resCount = 0;
+      const allPerms = new Set();
+      groups.forEach((g) => {
+        resCount += (g.resources || []).length;
+        (g.permissions || []).forEach((p) => allPerms.add(p));
+      });
+      const permArr = [...allPerms];
+
+      // Card container
+      const card = document.createElement("div");
+      card.className = "id-card";
+
+      // Header (always visible)
+      const header = document.createElement("div");
+      header.className = "id-card__header";
+
+      const avatar = document.createElement("div");
+      avatar.className = "id-card__avatar";
+      avatar.textContent = "👤";
+
+      const info = document.createElement("div");
+      info.className = "id-card__info";
+
+      const nameRow = document.createElement("div");
+      nameRow.className = "id-card__name";
+      nameRow.textContent = account + " ";
+      const provBadge = document.createElement("span");
+      provBadge.className = "badge " + providerBadgeClass(provider);
+      provBadge.textContent = provider.toUpperCase();
+      nameRow.appendChild(provBadge);
+      info.appendChild(nameRow);
+
+      // Meta row
+      const meta = document.createElement("div");
+      meta.className = "id-card__meta";
+      meta.innerHTML = `
+        <span class="id-card__meta-item">📦 <strong>${resCount}</strong> resource${resCount !== 1 ? "s" : ""}</span>
+        <span class="id-card__meta-item">🔑 <strong>${permArr.length}</strong> permission${permArr.length !== 1 ? "s" : ""}</span>
+      `;
+
+      // Token summary in meta
+      if (identity.token_details) {
+        const td = identity.token_details;
+        const parts = [];
+        if (td.username) parts.push(td.username);
+        if (td.token_type) parts.push(td.token_type);
+        if (parts.length) {
+          const tokenSpan = document.createElement("span");
+          tokenSpan.className = "id-card__meta-item";
+          tokenSpan.textContent = "🏷️ " + parts.join(" · ");
+          meta.appendChild(tokenSpan);
+        }
+      }
+      info.appendChild(meta);
+
+      // Permission preview (top 6)
+      if (permArr.length > 0) {
+        const preview = document.createElement("div");
+        preview.className = "id-card__perms-preview";
+        const limit = 6;
+        permArr.slice(0, limit).forEach((p) => {
+          const tag = document.createElement("span");
+          tag.className = "badge badge-perm";
+          tag.style.fontSize = "11px";
+          tag.textContent = p;
+          preview.appendChild(tag);
+        });
+        if (permArr.length > limit) {
+          const more = document.createElement("span");
+          more.className = "badge";
+          more.style.fontSize = "11px";
+          more.style.background = "var(--surface-muted)";
+          more.style.color = "var(--text-muted)";
+          more.textContent = "+" + (permArr.length - limit) + " more";
+          preview.appendChild(more);
+        }
+        info.appendChild(preview);
+      }
+
+      const toggle = document.createElement("div");
+      toggle.className = "id-card__toggle";
+      toggle.textContent = "▶";
+
+      header.appendChild(avatar);
+      header.appendChild(info);
+      header.appendChild(toggle);
+
+      // Body (expandable)
+      const body = document.createElement("div");
+      body.className = "id-card__body";
+
+      // Resources section
+      const resSection = document.createElement("div");
+      resSection.className = "id-card__section";
+      const resTitle = document.createElement("div");
+      resTitle.className = "id-card__section-title";
+      resTitle.textContent = "Resources (" + resCount + ")";
+      resSection.appendChild(resTitle);
+
+      const resGrid = document.createElement("div");
+      resGrid.className = "resource-grid";
+
+      groups.forEach((group) => {
+        const resources = group.resources || [];
+        const perms = group.permissions || [];
+
+        if (resources.length === 0 && perms.length > 0) {
+          const chip = document.createElement("div");
+          chip.className = "resource-chip";
+          const chipName = document.createElement("div");
+          chipName.className = "resource-chip__name";
+          chipName.textContent = "Project-wide / Unscoped";
+          chip.appendChild(chipName);
+          const chipPerms = document.createElement("div");
+          chipPerms.className = "resource-chip__perms";
+          perms.forEach((p) => {
+            const tag = document.createElement("span");
+            tag.className = "badge badge-perm";
+            tag.style.fontSize = "10px";
+            tag.textContent = p;
+            chipPerms.appendChild(tag);
+          });
+          chip.appendChild(chipPerms);
+          resGrid.appendChild(chip);
+        }
+
+        resources.forEach((resName) => {
+          const chip = document.createElement("div");
+          chip.className = "resource-chip";
+          const chipName = document.createElement("div");
+          chipName.className = "resource-chip__name";
+          chipName.textContent = String(resName);
+
+          // Console link
+          const { resourceType, resourceName } = extractResourceParts(String(resName));
+          const consoleLink = buildResourceConsoleLink(provider, resourceType, resourceName);
+          if (consoleLink) {
+            const a = document.createElement("a");
+            a.href = consoleLink;
+            a.target = "_blank";
+            a.rel = "noopener noreferrer";
+            a.textContent = "open in console ↗";
+            chipName.appendChild(a);
+          }
+          chip.appendChild(chipName);
+
+          if (perms.length > 0) {
+            const chipPerms = document.createElement("div");
+            chipPerms.className = "resource-chip__perms";
+            perms.forEach((p) => {
+              const tag = document.createElement("span");
+              tag.className = "badge badge-perm";
+              tag.style.fontSize = "10px";
+              tag.textContent = p;
+              chipPerms.appendChild(tag);
+            });
+            chip.appendChild(chipPerms);
+          }
+          resGrid.appendChild(chip);
+        });
+      });
+      resSection.appendChild(resGrid);
+      body.appendChild(resSection);
+
+      // Token details section
+      if (identity.token_details) {
+        const tokenSection = document.createElement("div");
+        tokenSection.className = "id-card__section";
+        const tokenTitle = document.createElement("div");
+        tokenTitle.className = "id-card__section-title";
+        tokenTitle.textContent = "Token Details";
+        tokenSection.appendChild(tokenTitle);
+
+        const tokenGrid = document.createElement("div");
+        tokenGrid.className = "token-grid";
+        const td = identity.token_details;
+        const fields = [
+          ["Name", td.name], ["Username", td.username], ["Token Type", td.token_type],
+          ["Account Type", td.account_type], ["User ID", td.user_id], ["Email", td.email],
+          ["Company", td.company], ["Created", td.created_at], ["Expires", td.expires_at],
+          ["Last Used", td.last_used_at], ["Location", td.location],
+        ];
+        if (identity.provider_metadata) {
+          if (identity.provider_metadata.version) fields.push(["Version", identity.provider_metadata.version]);
+          if (typeof identity.provider_metadata.enterprise === "boolean") fields.push(["Enterprise", identity.provider_metadata.enterprise ? "Yes" : "No"]);
+        }
+        fields.forEach(([label, value]) => {
+          if (!value) return;
+          const field = document.createElement("div");
+          field.className = "token-field";
+          field.innerHTML = `<strong>${escapeHtml(label)}:</strong> ${escapeHtml(String(value))}`;
+          tokenGrid.appendChild(field);
+        });
+        tokenSection.appendChild(tokenGrid);
+
+        // Scopes
+        if (Array.isArray(td.scopes) && td.scopes.length) {
+          const scopeDiv = document.createElement("div");
+          scopeDiv.style.marginTop = "8px";
+          scopeDiv.style.display = "flex";
+          scopeDiv.style.flexWrap = "wrap";
+          scopeDiv.style.gap = "4px";
+          td.scopes.forEach((scope) => {
+            const tag = document.createElement("span");
+            tag.className = "badge badge-perm";
+            tag.style.fontSize = "11px";
+            tag.textContent = scope;
+            scopeDiv.appendChild(tag);
+          });
+          tokenSection.appendChild(scopeDiv);
+        }
+
+        // Profile URL
+        if (td.url) {
+          const urlDiv = document.createElement("div");
+          urlDiv.style.marginTop = "6px";
+          urlDiv.style.fontSize = "12px";
+          const a = document.createElement("a");
+          a.href = td.url;
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+          a.textContent = td.url;
+          a.style.color = "var(--brand)";
+          urlDiv.appendChild(a);
+          tokenSection.appendChild(urlDiv);
+        }
+
+        body.appendChild(tokenSection);
+      }
+
+      card.appendChild(header);
+      card.appendChild(body);
+
+      // Footer with fingerprint
+      if (fingerprint) {
+        const footer = document.createElement("div");
+        footer.className = "id-card__footer";
+        footer.innerHTML = `Fingerprint: <code>${escapeHtml(fingerprint.substring(0, 20))}…</code>`;
+        const goBtn = document.createElement("button");
+        goBtn.className = "badge";
+        goBtn.textContent = "Go to finding";
+        goBtn.style.cursor = "pointer";
+        goBtn.style.marginLeft = "auto";
+        goBtn.style.background = "var(--brand-soft)";
+        goBtn.style.borderColor = "var(--brand)";
+        goBtn.style.color = "var(--brand-dark)";
+        goBtn.onclick = (e) => {
+          e.stopPropagation();
+          const si = document.getElementById("search-input");
+          if (si) {
+            setActiveView("view-findings");
+            si.value = fingerprint;
+            currentFilter = fingerprint;
+            currentPage = 1;
+            renderFindingsTable();
+          }
+        };
+        footer.appendChild(goBtn);
+        card.appendChild(footer);
+      }
+
+      // Toggle expand/collapse
+      header.addEventListener("click", () => {
+        const isOpen = body.classList.contains("open");
+        body.classList.toggle("open");
+        toggle.textContent = isOpen ? "▶" : "▼";
+      });
+
+      return card;
     }
 
     function buildRenderableAccessMap(filterLower) {
@@ -2674,6 +4111,7 @@
         const fingerprint = (identity.fingerprint || "").toLowerCase();
         const identityNameMatches = Boolean(filterLower) && (account.toLowerCase().includes(filterLower) || fingerprint.includes(filterLower));
         let anyResourceMatches = false;
+        let anyPermMatches = false;
 
         const preparedGroups = groups.map((group) => {
           const resources = Array.isArray(group.resources) ? group.resources : [];
@@ -2687,14 +4125,20 @@
             return matches;
           });
 
+          if (filterLower && !identityNameMatches) {
+            perms.forEach((p) => {
+              if (String(p).toLowerCase().includes(filterLower)) anyPermMatches = true;
+            });
+          }
+
           return { resources, filteredResources, permissions: perms };
         });
 
-        const hasMatch = !filterLower || identityNameMatches || anyResourceMatches;
+        const hasMatch = !filterLower || identityNameMatches || anyResourceMatches || anyPermMatches;
         if (!hasMatch) return;
 
         const viewGroups = preparedGroups.map((group) => ({
-          resources: !filterLower || identityNameMatches ? group.resources : group.filteredResources,
+          resources: !filterLower || identityNameMatches || anyPermMatches ? group.resources : group.filteredResources,
           permissions: group.permissions,
         }));
 
@@ -2736,82 +4180,6 @@
       }
     }
 
-    function createTreeNode(label, type, isOpen, provider) {
-      const container = document.createElement("div");
-      container.className = "tree-node";
-
-      const header = document.createElement("div");
-      header.className = "node-content";
-
-      const toggle = document.createElement("span");
-      toggle.style.fontSize = "10px";
-      toggle.style.color = "#9ca3af";
-      toggle.style.width = "12px";
-      toggle.textContent = isOpen ? "▼" : "▶";
-
-      const icon = document.createElement("span");
-      icon.className = "node-icon icon-" + type;
-      if (type === "identity") icon.textContent = "👤";
-      else if (type === "resource") icon.textContent = "📦";
-      else if (type === "group") icon.textContent = "🗂️";
-
-      const text = document.createElement("span");
-      text.textContent = label;
-      text.style.whiteSpace = "nowrap";
-      text.style.overflow = "hidden";
-      text.style.textOverflow = "ellipsis";
-
-      header.appendChild(toggle);
-      header.appendChild(icon);
-      header.appendChild(text);
-      if (type === "identity" && provider) {
-        addBadge(header, provider.toUpperCase(), providerBadgeClass(provider));
-      }
-
-      const children = document.createElement("div");
-      children.className = "tree-children";
-      if (isOpen) {
-        children.classList.add("open");
-        children.style.display = "block";
-      }
-
-      container.appendChild(header);
-      container.appendChild(children);
-
-      return { container, header, childrenContainer: children, toggleIcon: toggle };
-    }
-
-    function createLeafNode(label, type) {
-      const div = document.createElement("div");
-      div.className = "node-content";
-      div.style.marginLeft = "20px";
-      div.style.fontSize = "13px";
-
-      const icon = document.createElement("span");
-      icon.className = "node-icon icon-" + type;
-      if (type === "permission") icon.textContent = "🔑";
-      else if (type === "group") icon.textContent = "…";
-
-      const text = document.createElement("span");
-      text.textContent = label;
-
-      div.appendChild(icon);
-      div.appendChild(text);
-      return div;
-    }
-
-    function toggleNode(container, icon) {
-      if (container.style.display === "none" || !container.classList.contains("open")) {
-        container.classList.add("open");
-        container.style.display = "block";
-        icon.textContent = "▼";
-      } else {
-        container.classList.remove("open");
-        container.style.display = "none";
-        icon.textContent = "▶";
-      }
-    }
-
     function addBadge(container, text, cls) {
       const span = document.createElement("span");
       span.className = "badge " + cls;
@@ -2833,22 +4201,6 @@
       const base = identity && identity.account ? identity.account : "unknown-identity";
       const provider = identity && identity.provider ? identity.provider.toUpperCase() : null;
       return provider ? `[${provider}] ${base}` : base;
-    }
-
-    function setDetailName(text, link) {
-      const nameEl = document.getElementById("am-detail-name");
-      nameEl.innerHTML = "";
-
-      if (link) {
-        const anchor = document.createElement("a");
-        anchor.href = link;
-        anchor.target = "_blank";
-        anchor.rel = "noopener noreferrer";
-        anchor.textContent = text;
-        nameEl.appendChild(anchor);
-      } else {
-        nameEl.textContent = text;
-      }
     }
 
     function extractResourceParts(label) {
@@ -2883,45 +4235,33 @@
         const match = resource.match(/^arn:aws:iam::\d+:([^/]+)\/(.+)$/);
         const kind = match ? match[1] : null;
         const res = match ? match[2] : null;
-        if (kind === "role") {
-          return `https://console.aws.amazon.com/iam/home?#/roles/${encodeURIComponent(res)}`;
-        }
-        if (kind === "user") {
-          return `https://console.aws.amazon.com/iam/home?#/users/${encodeURIComponent(res)}`;
-        }
+        if (kind === "role") return `https://console.aws.amazon.com/iam/home?#/roles/${encodeURIComponent(res)}`;
+        if (kind === "user") return `https://console.aws.amazon.com/iam/home?#/users/${encodeURIComponent(res)}`;
         return null;
       }
 
       if (service === "lambda") {
         const match = resourcePart.match(/^function[:\/](.+)$/);
         if (match && match[1]) {
-          const fnName = match[1];
           const regionQuery = region ? `?region=${encodeURIComponent(region)}` : "";
-          return `https://console.aws.amazon.com/lambda/home${regionQuery}#/functions/${encodeURIComponent(fnName)}`;
+          return `https://console.aws.amazon.com/lambda/home${regionQuery}#/functions/${encodeURIComponent(match[1])}`;
         }
         return null;
       }
 
       if (service === "ec2") {
         const match = resourcePart.match(/^instance\/(.+)$/);
-        if (match && match[1]) {
-          const instanceId = match[1];
-          return `https://console.aws.amazon.com/ec2/v2/home?#InstanceDetails:instanceId=${encodeURIComponent(instanceId)}`;
-        }
+        if (match && match[1]) return `https://console.aws.amazon.com/ec2/v2/home?#InstanceDetails:instanceId=${encodeURIComponent(match[1])}`;
         return null;
       }
 
       if (service === "kms") {
         const match = resourcePart.match(/^(?:key|alias)\/(.+)$/);
-        if (match && match[1]) {
-          return `https://console.aws.amazon.com/kms/home?#/kms/keys/${encodeURIComponent(match[1])}`;
-        }
+        if (match && match[1]) return `https://console.aws.amazon.com/kms/home?#/kms/keys/${encodeURIComponent(match[1])}`;
         return null;
       }
 
-      if (service === "secretsmanager") {
-        return `https://console.aws.amazon.com/secretsmanager/home?#/secret?name=${encodeURIComponent(resource)}`;
-      }
+      if (service === "secretsmanager") return `https://console.aws.amazon.com/secretsmanager/home?#/secret?name=${encodeURIComponent(resource)}`;
 
       if (service === "dynamodb") {
         const match = resourcePart.match(/^(?:table\/(.+)|table:(.+))/);
@@ -2944,192 +4284,22 @@
 
       if (resource.includes("/buckets/")) {
         const bucketMatch = resource.match(/\/buckets\/([^/]+)/);
-        const bucket = bucketMatch ? bucketMatch[1] : null;
-        if (bucket && project) {
-          return `https://console.cloud.google.com/storage/browser/${encodeURIComponent(bucket)}?project=${encodeURIComponent(project)}`;
-        }
+        if (bucketMatch && bucketMatch[1] && project) return `https://console.cloud.google.com/storage/browser/${encodeURIComponent(bucketMatch[1])}?project=${encodeURIComponent(project)}`;
       }
-
       if (resource.includes("/datasets/")) {
         const datasetMatch = resource.match(/\/datasets\/([^/]+)/);
-        const dataset = datasetMatch ? datasetMatch[1] : null;
-        if (dataset && project) {
-          return `https://console.cloud.google.com/bigquery?project=${encodeURIComponent(project)}&p=${encodeURIComponent(project)}&d=${encodeURIComponent(dataset)}&page=dataset`;
-        }
+        if (datasetMatch && datasetMatch[1] && project) return `https://console.cloud.google.com/bigquery?project=${encodeURIComponent(project)}&p=${encodeURIComponent(project)}&d=${encodeURIComponent(datasetMatch[1])}&page=dataset`;
       }
-
       if (resource.includes("/secrets/")) {
         const secretMatch = resource.match(/\/secrets\/([^/:]+)/);
-        const secret = secretMatch ? secretMatch[1] : null;
-        if (secret && project) {
-          return `https://console.cloud.google.com/security/secret-manager/secret/${encodeURIComponent(secret)}/versions?project=${encodeURIComponent(project)}`;
-        }
+        if (secretMatch && secretMatch[1] && project) return `https://console.cloud.google.com/security/secret-manager/secret/${encodeURIComponent(secretMatch[1])}/versions?project=${encodeURIComponent(project)}`;
       }
-
       if (resource.includes("/functions/")) {
         const fnMatch = resource.match(/\/locations\/([^/]+)\/functions\/([^/]+)/);
-        if (fnMatch && project) {
-          const region = fnMatch[1];
-          const fnName = fnMatch[2];
-          return `https://console.cloud.google.com/functions/details/${encodeURIComponent(region)}/${encodeURIComponent(fnName)}?project=${encodeURIComponent(project)}`;
-        }
+        if (fnMatch && project) return `https://console.cloud.google.com/functions/details/${encodeURIComponent(fnMatch[1])}/${encodeURIComponent(fnMatch[2])}?project=${encodeURIComponent(project)}`;
       }
-
-      if (project) {
-        return `https://console.cloud.google.com/home/dashboard?project=${encodeURIComponent(project)}`;
-      }
-
+      if (project) return `https://console.cloud.google.com/home/dashboard?project=${encodeURIComponent(project)}`;
       return null;
-    }
-
-    function showAccessDetail(type, data) {
-      document.getElementById("am-empty-state").classList.add("hidden");
-      const view = document.getElementById("am-detail-view");
-      view.classList.remove("hidden");
-
-      const icon = document.getElementById("am-detail-icon");
-      const meta = document.getElementById("am-detail-meta");
-      const typeField = document.getElementById("am-detail-type");
-      const cloudField = document.getElementById("am-detail-cloud");
-      const permsContainer = document.getElementById("am-perms-container");
-      const permsList = document.getElementById("am-perms-list");
-      const tokenContainer = document.getElementById("am-token-container");
-      const tokenName = document.getElementById("am-token-name");
-      const tokenUsername = document.getElementById("am-token-username");
-      const tokenType = document.getElementById("am-token-type");
-      const tokenAccountType = document.getElementById("am-token-account-type");
-      const tokenUser = document.getElementById("am-token-user");
-      const tokenCompany = document.getElementById("am-token-company");
-      const tokenCreated = document.getElementById("am-token-created");
-      const tokenLocation = document.getElementById("am-token-location");
-      const tokenLastUsed = document.getElementById("am-token-last-used");
-      const tokenEmail = document.getElementById("am-token-email");
-      const tokenExpires = document.getElementById("am-token-expires");
-      const tokenUrl = document.getElementById("am-token-url");
-      const tokenVersion = document.getElementById("am-token-version");
-      const tokenEnterprise = document.getElementById("am-token-enterprise");
-      const tokenScopes = document.getElementById("am-token-scopes");
-
-      meta.innerHTML = "";
-      permsList.innerHTML = "";
-      permsContainer.classList.add("hidden");
-      tokenScopes.innerHTML = "";
-      tokenContainer.classList.add("hidden");
-
-      let detailName = "";
-      let detailLink = null;
-
-      if (type === "identity") {
-        icon.textContent = "👤";
-        icon.className = "detail-icon-lg";
-        detailName = data.account || "(unknown identity)";
-        typeField.textContent = "Identity";
-        const provider = (data.provider || "unknown").toUpperCase();
-        cloudField.textContent = provider;
-        if (data.provider) {
-          addBadge(meta, provider, providerBadgeClass(data.provider));
-        }
-        if (data.fingerprint) {
-          const fpDiv = document.createElement("div");
-          fpDiv.style.width = "100%";
-          fpDiv.style.marginTop = "6px";
-          fpDiv.style.fontSize = "11px";
-          fpDiv.style.color = "var(--text-muted)";
-          fpDiv.textContent = "Fingerprint: " + data.fingerprint;
-          meta.appendChild(fpDiv);
-
-          const btn = document.createElement("button");
-          btn.className = "badge";
-          btn.textContent = "Go to finding";
-          btn.style.marginTop = "6px";
-          btn.style.cursor = "pointer";
-          btn.style.background = "var(--brand-soft)";
-          btn.style.borderColor = "var(--brand)";
-          btn.style.color = "var(--brand-dark)";
-          btn.onclick = () => {
-             const searchInput = document.getElementById("search-input");
-             if (searchInput) {
-                 setActiveView("view-findings");
-                 searchInput.value = data.fingerprint;
-                 currentFilter = data.fingerprint;
-                 currentPage = 1;
-                 renderFindingsTable();
-                 setTimeout(() => {
-                     const tableContainer = document.querySelector('.table-container');
-                     if (tableContainer) {
-                         tableContainer.scrollIntoView({behavior: 'smooth', block: 'start'});
-                     }
-                 }, 50);
-             }
-          };
-          meta.appendChild(btn);
-        }
-        if (data.token_details) {
-          const details = data.token_details;
-          tokenName.textContent = details.name || "-";
-          tokenUsername.textContent = details.username || "-";
-          tokenType.textContent = details.token_type || "-";
-          tokenAccountType.textContent = details.account_type || "-";
-          tokenUser.textContent = details.user_id || "-";
-          tokenCompany.textContent = details.company || "-";
-          tokenCreated.textContent = details.created_at || "-";
-          tokenLocation.textContent = details.location || "-";
-          tokenLastUsed.textContent = details.last_used_at || "-";
-          tokenEmail.textContent = details.email || "-";
-          tokenExpires.textContent = details.expires_at || "-";
-          if (details.url) {
-            tokenUrl.innerHTML = "";
-            const urlLink = document.createElement("a");
-            urlLink.href = details.url;
-            urlLink.target = "_blank";
-            urlLink.rel = "noreferrer noopener";
-            urlLink.textContent = details.url;
-            tokenUrl.appendChild(urlLink);
-          } else {
-            tokenUrl.textContent = "-";
-          }
-          tokenVersion.textContent =
-            (data.provider_metadata && data.provider_metadata.version) || "-";
-          tokenEnterprise.textContent =
-            data.provider_metadata && typeof data.provider_metadata.enterprise === "boolean"
-              ? data.provider_metadata.enterprise
-                ? "true"
-                : "false"
-              : "-";
-          if (Array.isArray(details.scopes)) {
-            details.scopes.forEach((scope) => addBadge(tokenScopes, scope, "badge-perm"));
-          }
-          tokenContainer.classList.remove("hidden");
-        }
-      } else if (type === "resource") {
-        icon.textContent = "📦";
-        icon.className = "detail-icon-lg";
-        const resourceLabel = data.name || "(resource)";
-        const { resourceType, resourceName } = extractResourceParts(resourceLabel);
-        detailName = resourceLabel;
-        detailLink = buildResourceConsoleLink(data.provider, resourceType, resourceName);
-        typeField.textContent = "Resource";
-        const provider = (data.provider || "unknown").toUpperCase();
-        cloudField.textContent = provider;
-        if (data.provider) {
-          addBadge(meta, provider, providerBadgeClass(data.provider));
-        }
-
-        if (Array.isArray(data.permissions) && data.permissions.length) {
-          permsContainer.classList.remove("hidden");
-          data.permissions.forEach((p) => {
-            addBadge(permsList, p, "badge-perm");
-          });
-        }
-      } else if (type === "permission") {
-        icon.textContent = "🔑";
-        icon.className = "detail-icon-lg";
-        detailName = data.name || "(permission)";
-        typeField.textContent = "Permission string";
-        cloudField.textContent = "-";
-      }
-
-      setDetailName(detailName, detailLink);
     }
   </script>
 </body>
