@@ -42,6 +42,7 @@ Designed for offensive security engineers and blue-teamers alike, Kingfisher hel
 - **Baseline management**: generate and track baselines to suppress known secrets ([docs/BASELINE.md](/docs/BASELINE.md))
 - **Checksum-aware detection**: verifies tokens with built-in checksums (e.g., GitHub, Confluent, Zuplo) — no API calls required
 - **Built-in Report Viewer**: Visualize and triage findings locally with `kingfisher view ./report-file.json`
+- **Audit reporting**: Generate compliance-oriented HTML reports with scan metadata and validation ordering
 - **Library crates**: Embed Kingfisher's scanning engine in your own Rust applications ([docs/LIBRARY.md](docs/LIBRARY.md))
 
 # Benchmark Results
@@ -82,6 +83,7 @@ kingfisher scan /path/to/scan --access-map --view-report
 # Table of Contents
 
 - [Key Features](#key-features)
+- [Compliance and Audit-Ready Scans](#compliance-and-audit-ready-scans)
 - [Benchmark Results](#benchmark-results)
 - [Getting Started](#getting-started)
   - [Quick Start](#quick-start)
@@ -365,6 +367,20 @@ Validation throttling is also available for direct validation:
 # Limit direct validation to 1 req/sec for GitHub rules
 kingfisher validate --rule github "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
   --validation-rps-rule github=1
+```
+
+
+## Compliance and Audit-Ready Scans
+
+Kingfisher is built to support compliance and security-assurance goals, not just detection. In addition to finding secrets, it helps teams produce evidence that secure development controls are operating.
+
+- **Audit scan output**: generate a standalone HTML report with scan timestamp, report generation time, validation status, and file-level links for findings
+- **Evidence-friendly metadata**: include version, scan stats, and sanitized command arguments for review workflows
+- **Control narrative support**: demonstrate that hardcoded credentials/secrets are actively detected and triaged in CI/CD and developer workflows
+
+```bash
+# Generate an audit-ready HTML report
+kingfisher scan /path/to/code --format html --output kingfisher-audit.html
 ```
 
 ## Advanced Scanning Options
