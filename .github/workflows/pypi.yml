@@ -30,13 +30,19 @@ jobs:
       - name: Determine version/tag
         id: version
         shell: bash
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag || '' }}
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && -n "${{ github.event.inputs.tag }}" ]]; then
-            TAG="${{ github.event.inputs.tag }}"
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && -n "${INPUT_TAG}" ]]; then
+            TAG="${INPUT_TAG}"
           else
             VERSION=$(grep -m1 '^version\s*=' Cargo.toml | cut -d '"' -f2)
             TAG="v${VERSION}"
+          fi
+          if [[ ! "${TAG}" =~ ^v[0-9A-Za-z._+-]+$ ]]; then
+            echo "Invalid tag format: ${TAG}" >&2
+            exit 1
           fi
           VERSION="${TAG#v}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"

@@ -59,6 +59,6 @@ mod test {
 
         let html = fs::read_to_string(&output_html).expect("html report should be written");
         assert!(html.contains("Kingfisher Audit Report"));
-        assert!(html.contains("Audit Metadata"));
+        assert!(html.contains("Scan Summary"));
     }
 }
