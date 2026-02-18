@@ -8,10 +8,12 @@ mod aws;
 mod azure;
 mod azure_devops;
 mod bitbucket;
+mod buildkite;
 mod gcp;
 mod gitea;
 mod github;
 mod gitlab;
+mod harness;
 mod huggingface;
 pub(crate) mod mongodb;
 pub(crate) mod postgres;
@@ -48,6 +50,8 @@ pub async fn run(args: AccessMapArgs) -> Result<()> {
         AccessMapProvider::Huggingface => huggingface::map_access(&args).await?,
         AccessMapProvider::Gitea => gitea::map_access(&args).await?,
         AccessMapProvider::Bitbucket => bitbucket::map_access(&args).await?,
+        AccessMapProvider::Buildkite => buildkite::map_access(&args).await?,
+        AccessMapProvider::Harness => harness::map_access(&args).await?,
     };
 
     let json = serde_json::to_string_pretty(&result)?;
@@ -96,6 +100,10 @@ pub enum AccessMapRequest {
     Gitea { token: String, fingerprint: String },
     /// A Bitbucket token.
     Bitbucket { token: String, fingerprint: String },
+    /// A Buildkite token.
+    Buildkite { token: String, fingerprint: String },
+    /// A Harness API token (x-api-key).
+    Harness { token: String, fingerprint: String },
 }
 
 /// Structured output describing the resolved identity and its risk profile.
@@ -290,6 +298,12 @@ pub async fn map_requests(requests: Vec<AccessMapRequest>) -> Vec<AccessMapResul
             AccessMapRequest::Bitbucket { token, fingerprint } => {
                 (map_token(&BitbucketMapper, &token).await, fingerprint)
             }
+            AccessMapRequest::Buildkite { token, fingerprint } => {
+                (map_token(&BuildkiteMapper, &token).await, fingerprint)
+            }
+            AccessMapRequest::Harness { token, fingerprint } => {
+                (map_token(&HarnessMapper, &token).await, fingerprint)
+            }
         };
 
         mapped.fingerprint = Some(fp);
@@ -392,6 +406,32 @@ impl TokenAccessMapper for BitbucketMapper {
 
     async fn map_access_from_token(&self, token: &str) -> Result<AccessMapResult> {
         bitbucket::map_access_from_token(token).await
+    }
+}
+
+/// Buildkite access mapper.
+pub struct BuildkiteMapper;
+
+impl TokenAccessMapper for BuildkiteMapper {
+    fn cloud_name(&self) -> &'static str {
+        "buildkite"
+    }
+
+    async fn map_access_from_token(&self, token: &str) -> Result<AccessMapResult> {
+        buildkite::map_access_from_token(token).await
+    }
+}
+
+/// Harness access mapper.
+pub struct HarnessMapper;
+
+impl TokenAccessMapper for HarnessMapper {
+    fn cloud_name(&self) -> &'static str {
+        "harness"
+    }
+
+    async fn map_access_from_token(&self, token: &str) -> Result<AccessMapResult> {
+        harness::map_access_from_token(token).await
     }
 }
 

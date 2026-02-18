@@ -137,6 +137,21 @@ impl AccessMapCollector {
         });
     }
 
+    pub fn record_buildkite(&self, token: &str, fingerprint: String) {
+        let key = xxhash_rust::xxh3::xxh3_64(format!("buildkite|{token}").as_bytes());
+        self.inner.entry(key).or_insert_with(|| AccessMapRequest::Buildkite {
+            token: token.to_string(),
+            fingerprint,
+        });
+    }
+
+    pub fn record_harness(&self, token: &str, fingerprint: String) {
+        let key = xxhash_rust::xxh3::xxh3_64(format!("harness|{token}").as_bytes());
+        self.inner
+            .entry(key)
+            .or_insert_with(|| AccessMapRequest::Harness { token: token.to_string(), fingerprint });
+    }
+
     pub fn into_requests(self) -> Vec<AccessMapRequest> {
         self.inner.iter().map(|entry| entry.value().clone()).collect()
     }
@@ -763,7 +778,21 @@ fn maybe_record_access_map(om: &OwnedBlobMatch, collector: Option<&AccessMapColl
             if om.rule.id().starts_with("kingfisher.bitbucket.") {
                 if let Some((_, value, ..)) = captures.iter().find(|(name, ..)| name == "TOKEN") {
                     if !value.is_empty() {
-                        collector.record_bitbucket(value, fp);
+                        collector.record_bitbucket(value, fp.clone());
+                    }
+                }
+            }
+            if om.rule.id().starts_with("kingfisher.buildkite.") {
+                if let Some((_, value, ..)) = captures.iter().find(|(name, ..)| name == "TOKEN") {
+                    if !value.is_empty() {
+                        collector.record_buildkite(value, fp.clone());
+                    }
+                }
+            }
+            if om.rule.id().starts_with("kingfisher.harness.") {
+                if let Some((_, value, ..)) = captures.iter().find(|(name, ..)| name == "TOKEN") {
+                    if !value.is_empty() {
+                        collector.record_harness(value, fp.clone());
                     }
                 }
             }

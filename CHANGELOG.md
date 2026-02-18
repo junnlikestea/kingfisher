@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [v1.84.0]
 - Added/updated `pipedrive` and `amplitude` rules
+- Access Map: added Buildkite provider. Enumerates token scopes, user identity, organizations, and pipelines with severity classification based on scope risk.
+- Access Map: added Harness provider. Uses `x-api-key` authentication to enumerate organizations/projects when permitted (best-effort).
+- Access Map CLI: added providers `buildkite`, `harness`.
+- Reports: omit `validate`/`revoke` command hints when required template vars are missing (prevents suggesting unrunnable commands, e.g. Harness `ACCOUNTIDENTIFIER`).
 
 ## [v1.83.0]
 - Kingfisher can now generate an auditor-friendly HTML report: `--format html --output kingfisher-audit.html`

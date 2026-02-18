@@ -218,8 +218,50 @@ kingfisher access-map bitbucket ./bitbucket.token --json-out bitbucket.access-ma
 - Access map uses `https://api.bitbucket.org/2.0` as the API base.
 - Workspace owners are classified as High severity.
 
+### Buildkite (`buildkite`)
+
+- **Credential**: a single Buildkite API token string (read from a file for `kingfisher access-map buildkite <FILE>`).
+- **Token types supported**: tokens accepted by Buildkite's REST API with `Authorization: Bearer <TOKEN>` (API access tokens, commonly `bkua_...`).
+
+Kingfisher queries `/v2/access-token` for token metadata and scopes, `/v2/user` for identity, `/v2/organizations` for organization memberships, and `/v2/organizations/{org}/pipelines` for pipeline enumeration. Token scopes and organization access are used to classify risk.
+
+#### Standalone example (Buildkite)
+
+```bash
+printf '%s' 'bkua_example...' > ./buildkite.token
+kingfisher access-map buildkite ./buildkite.token --json-out buildkite.access-map.json
+```
+
+#### Notes (Buildkite)
+
+- Access map uses `https://api.buildkite.com/v2` as the API base.
+- Tokens with `write_organizations` or `write_teams` scopes are classified as High severity.
+
+### Harness (`harness`)
+
+- **Credential**: a single Harness API key / personal access token (PAT) string (read from a file for `kingfisher access-map harness <FILE>`).
+- **Auth header**: Harness APIs authenticate via `x-api-key: <TOKEN>` (see the Harness API docs).
+
+Kingfisher performs best-effort, read-only enumeration:
+
+- Queries the API key aggregate endpoint for basic token metadata (when available).
+- Enumerates organizations via `GET https://app.harness.io/v1/orgs` and projects via `GET https://app.harness.io/v1/orgs/{org}/projects` when the key has permission.
+
+If organizations/projects are not enumerable (scope-limited keys), Kingfisher still produces an access-map record with a conservative severity and a note explaining the limitation.
+
+#### Standalone example (Harness)
+
+```bash
+printf '%s' 'pat.example...' > ./harness.token
+kingfisher access-map harness ./harness.token --json-out harness.access-map.json
+```
+
+#### Notes (Harness)
+
+- Access map uses `https://app.harness.io` as the API base.
+
 ## Notes on access-map generation during `scan --access-map`
 
 - Access-map entries are only recorded for **validated** findings.
 - Some providers require extra context that Kingfisher infers from the finding context or validation response (for example, Azure DevOps organization name).
-- Validated Hugging Face, Gitea, and Bitbucket credentials discovered during scans with `--access-map` are automatically collected and mapped, matching the existing behavior for other platforms.
+- Validated Hugging Face, Gitea, Bitbucket, and Buildkite credentials discovered during scans with `--access-map` are automatically collected and mapped, matching the existing behavior for other platforms.
