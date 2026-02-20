@@ -28,6 +28,32 @@ struct AnthropicModel {
     display_name: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Default, Clone)]
+struct AnthropicApiKey {
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    created_at: Option<String>,
+    #[serde(default)]
+    permissions: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Default, Clone)]
+struct AnthropicApiKeysResponse {
+    #[serde(default)]
+    data: Vec<AnthropicApiKey>,
+}
+
+#[derive(Debug, Default, Clone)]
+struct KeyIntrospection {
+    permissions: Vec<String>,
+    id: Option<String>,
+    name: Option<String>,
+    created_at: Option<String>,
+}
+
 pub async fn map_access(args: &AccessMapArgs) -> Result<AccessMapResult> {
     let token = if let Some(path) = args.credential_path.as_deref() {
         let raw = std::fs::read_to_string(path)
@@ -50,6 +76,12 @@ pub async fn map_access_from_token(token: &str) -> Result<AccessMapResult> {
     let mut roles = Vec::new();
     let mut permissions = PermissionSummary::default();
     let mut resources = Vec::new();
+    let key_info = fetch_key_permissions(&client, token).await.unwrap_or_else(|err| {
+        warn!("Anthropic access-map: key permission lookup failed: {err}");
+        risk_notes.push(format!("Key permission lookup failed: {err}"));
+        KeyIntrospection::default()
+    });
+    let mut token_scopes = key_info.permissions.clone();
 
     let models = list_models(&client, token).await.unwrap_or_else(|err| {
         warn!("Anthropic access-map: model enumeration failed: {err}");
@@ -63,6 +95,20 @@ pub async fn map_access_from_token(token: &str) -> Result<AccessMapResult> {
         source: "anthropic".into(),
         permissions: vec![format!("token:{token_kind}")],
     });
+
+    token_scopes.sort();
+    token_scopes.dedup();
+    for scope in &token_scopes {
+        roles.push(RoleBinding {
+            name: format!("permission:{scope}"),
+            source: "anthropic".into(),
+            permissions: vec![format!("key:{scope}")],
+        });
+        match scope.as_str() {
+            "full_access" => permissions.admin.push("key:full_access".to_string()),
+            _ => permissions.risky.push(format!("key:{scope}")),
+        }
+    }
     permissions.read_only.push("models:list".to_string());
 
     for model in models.iter().take(MAX_MODEL_RESOURCES) {
@@ -101,7 +147,7 @@ pub async fn map_access_from_token(token: &str) -> Result<AccessMapResult> {
     permissions.read_only.sort();
     permissions.read_only.dedup();
 
-    let severity = Severity::Low;
+    let severity = derive_severity(&permissions);
 
     Ok(AccessMapResult {
         cloud: "anthropic".into(),
@@ -119,7 +165,7 @@ pub async fn map_access_from_token(token: &str) -> Result<AccessMapResult> {
         recommendations: build_recommendations(severity),
         risk_notes,
         token_details: Some(AccessTokenDetails {
-            name: None,
+            name: key_info.name,
             username: None,
             account_type: Some("api_key".into()),
             company: None,
@@ -127,11 +173,11 @@ pub async fn map_access_from_token(token: &str) -> Result<AccessMapResult> {
             email: None,
             url: Some("https://console.anthropic.com/settings/keys".into()),
             token_type: Some(token_kind.to_string()),
-            created_at: None,
+            created_at: key_info.created_at,
             last_used_at: None,
             expires_at: None,
-            user_id: None,
-            scopes: Vec::new(),
+            user_id: key_info.id,
+            scopes: token_scopes,
         }),
         provider_metadata: None,
         fingerprint: None,
@@ -168,6 +214,106 @@ fn detect_token_type(token: &str) -> &'static str {
     } else {
         "unknown_api_key"
     }
+}
+
+async fn fetch_key_permissions(client: &Client, token: &str) -> Result<KeyIntrospection> {
+    if let Ok(Some(key)) = fetch_permissions_from_endpoint(
+        client,
+        token,
+        &format!("{ANTHROPIC_API}/organizations/api_keys/me"),
+    )
+    .await
+    {
+        return Ok(KeyIntrospection {
+            permissions: key.permissions,
+            id: key.id,
+            name: key.name,
+            created_at: key.created_at,
+        });
+    }
+
+    if let Ok(Some(key)) =
+        fetch_permissions_from_endpoint(client, token, &format!("{ANTHROPIC_API}/api_keys/me"))
+            .await
+    {
+        return Ok(KeyIntrospection {
+            permissions: key.permissions,
+            id: key.id,
+            name: key.name,
+            created_at: key.created_at,
+        });
+    }
+
+    let list_resp = client
+        .get(format!("{ANTHROPIC_API}/organizations/api_keys"))
+        .header("x-api-key", token)
+        .header("anthropic-version", ANTHROPIC_VERSION)
+        .header(header::ACCEPT, "application/json")
+        .send()
+        .await
+        .context("Anthropic access-map: failed to list API keys")?;
+
+    if !list_resp.status().is_success() {
+        return Err(anyhow!(
+            "Anthropic access-map: API key listing failed with HTTP {}",
+            list_resp.status()
+        ));
+    }
+
+    let body: AnthropicApiKeysResponse =
+        list_resp.json().await.context("Anthropic access-map: invalid API key list JSON")?;
+
+    if body.data.len() == 1 {
+        let key = &body.data[0];
+        return Ok(KeyIntrospection {
+            permissions: key.permissions.clone(),
+            id: key.id.clone(),
+            name: key.name.clone(),
+            created_at: key.created_at.clone(),
+        });
+    }
+
+    Err(anyhow!("Anthropic access-map: unable to map listed key permissions to this token"))
+}
+
+async fn fetch_permissions_from_endpoint(
+    client: &Client,
+    token: &str,
+    url: &str,
+) -> Result<Option<AnthropicApiKey>> {
+    let resp = client
+        .get(url)
+        .header("x-api-key", token)
+        .header("anthropic-version", ANTHROPIC_VERSION)
+        .header(header::ACCEPT, "application/json")
+        .send()
+        .await
+        .with_context(|| format!("Anthropic access-map: failed to query {url}"))?;
+
+    if !resp.status().is_success() {
+        return Ok(None);
+    }
+
+    let body: AnthropicApiKey = resp
+        .json()
+        .await
+        .with_context(|| format!("Anthropic access-map: invalid API key JSON from {url}"))?;
+
+    if body.permissions.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(body))
+    }
+}
+
+fn derive_severity(permissions: &PermissionSummary) -> Severity {
+    if !permissions.admin.is_empty() {
+        return Severity::High;
+    }
+    if !permissions.risky.is_empty() {
+        return Severity::Medium;
+    }
+    Severity::Low
 }
 
 fn severity_to_str(severity: Severity) -> &'static str {
