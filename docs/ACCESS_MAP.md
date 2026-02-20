@@ -260,8 +260,64 @@ kingfisher access-map harness ./harness.token --json-out harness.access-map.json
 
 - Access map uses `https://app.harness.io` as the API base.
 
+### OpenAI (`openai`)
+
+- **Credential**: a single OpenAI API key string (read from a file for `kingfisher access-map openai <FILE>`).
+- **Token types supported**: OpenAI keys accepted by `Authorization: Bearer <TOKEN>` (for example `sk-...`, `sk-proj-...`, `sk-svcacct-...`).
+
+Kingfisher performs read-only enumeration via:
+
+- `GET https://api.openai.com/v1/models` to list accessible models and infer organization ownership.
+- `GET https://api.openai.com/v1/me` for token identity metadata when available.
+- `GET https://api.openai.com/v1/organization/projects` for project visibility when the key has permission (best-effort).
+
+#### Standalone example (OpenAI)
+
+```bash
+printf '%s' 'sk-example...' > ./openai.token
+kingfisher access-map openai ./openai.token --json-out openai.access-map.json
+```
+
+#### Notes (OpenAI)
+
+- Access map uses `https://api.openai.com/v1` as the API base.
+
+### Salesforce (`salesforce`)
+
+- **Credential**: Salesforce access token plus instance domain.
+- **Supported standalone formats** for `kingfisher access-map salesforce <FILE>`:
+  - JSON:
+    - `token` (or `access_token`)
+    - `instance_url` (or `instance`), such as `https://mydomain.my.salesforce.com`
+  - Free-form text containing both:
+    - a Salesforce access token (`00...!...`)
+    - an instance host (`<instance>.my.salesforce.com`)
+
+Kingfisher performs read-only enumeration via:
+
+- `GET /services/data/v60.0/limits` to confirm API access and gather account-level API context.
+- `GET /services/oauth2/userinfo` for identity metadata when available.
+- `GET /services/data/v60.0/sobjects` for visible object metadata (best-effort).
+
+#### Standalone example (Salesforce)
+
+```bash
+cat > ./salesforce.json <<'EOF'
+{
+  "token": "00DE0X0A0M0PeLE!AQcAQH0dMHEXAMPLE...",
+  "instance_url": "https://mydomain.my.salesforce.com"
+}
+EOF
+
+kingfisher access-map salesforce ./salesforce.json --json-out salesforce.access-map.json
+```
+
+#### Notes (Salesforce)
+
+- Access map currently targets `https://<instance>.my.salesforce.com` and API version `v60.0`.
+
 ## Notes on access-map generation during `scan --access-map`
 
 - Access-map entries are only recorded for **validated** findings.
 - Some providers require extra context that Kingfisher infers from the finding context or validation response (for example, Azure DevOps organization name).
-- Validated Hugging Face, Gitea, Bitbucket, and Buildkite credentials discovered during scans with `--access-map` are automatically collected and mapped, matching the existing behavior for other platforms.
+- Validated Hugging Face, Gitea, Bitbucket, Buildkite, Harness, OpenAI, Anthropic, and Salesforce credentials discovered during scans with `--access-map` are automatically collected and mapped, matching the existing behavior for other platforms.

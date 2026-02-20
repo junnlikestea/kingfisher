@@ -6,7 +6,10 @@ All notable changes to this project will be documented in this file.
 - Added/updated `pipedrive` and `amplitude` rules
 - Access Map: added Buildkite provider. Enumerates token scopes, user identity, organizations, and pipelines with severity classification based on scope risk.
 - Access Map: added Harness provider. Uses `x-api-key` authentication to enumerate organizations/projects when permitted (best-effort).
-- Access Map CLI: added providers `buildkite`, `harness`.
+- Access Map: added OpenAI provider. Supports standalone `access-map openai` and automatic mapping for validated `kingfisher.openai.*` findings.
+- Access Map: added Anthropic provider. Supports standalone `access-map anthropic` and automatic mapping for validated `kingfisher.anthropic.*` findings.
+- Access Map: added Salesforce provider. Supports standalone `access-map salesforce` (token + instance) and automatic mapping for validated `kingfisher.salesforce.*` findings.
+- Access Map CLI: added providers `buildkite`, `harness`, `openai`, `anthropic`, `salesforce`.
 - Reports: omit `validate`/`revoke` command hints when required template vars are missing (prevents suggesting unrunnable commands, e.g. Harness `ACCOUNTIDENTIFIER`).
 - Access Map GCP: added resource enumeration for Cloud KMS key rings, Cloud Functions, Firestore databases, Cloud Spanner instances, and project service accounts.
 - Access Map GCP: populated `token_details` with service account metadata (display name, unique ID, disabled status).

@@ -47,17 +47,14 @@ pub async fn map_access_from_json(data: &str) -> Result<AccessMapResult> {
     let mut project_id =
         if token_context.project_id.is_empty() { None } else { Some(token_context.project_id) };
 
-    let sa_metadata = match fetch_service_account_metadata(&http_client, &access_token, &client_email)
-        .await
-    {
-        Ok(meta) => meta,
-        Err(err) => {
-            verbose_warn!(
-                "GCP access-map: failed to fetch service account metadata: {err}"
-            );
-            ServiceAccountMetadata::default()
-        }
-    };
+    let sa_metadata =
+        match fetch_service_account_metadata(&http_client, &access_token, &client_email).await {
+            Ok(meta) => meta,
+            Err(err) => {
+                verbose_warn!("GCP access-map: failed to fetch service account metadata: {err}");
+                ServiceAccountMetadata::default()
+            }
+        };
 
     if project_id.is_none() {
         project_id = sa_metadata.project_id.clone();
@@ -1105,9 +1102,8 @@ async fn enumerate_resources(
         } else if status.is_success() {
             let json: Value = serde_json::from_slice(&body)?;
             if let Some(items) = json.get("secrets").and_then(|i| i.as_array()) {
-                let can_access_values = perm_set
-                    .iter()
-                    .any(|p| p.contains("secretmanager.versions.access"));
+                let can_access_values =
+                    perm_set.iter().any(|p| p.contains("secretmanager.versions.access"));
                 let can_write = perm_set.iter().any(|p| {
                     p.contains("secretmanager.secrets.create")
                         || p.contains("secretmanager.secrets.update")
@@ -1197,7 +1193,11 @@ async fn enumerate_resources(
                             name: name.to_string(),
                             permissions: matching_permissions(
                                 &perm_set,
-                                &["cloudkms.cryptoKeys.", "cloudkms.keyRings.", "cloudkms.cryptoKeyVersions."],
+                                &[
+                                    "cloudkms.cryptoKeys.",
+                                    "cloudkms.keyRings.",
+                                    "cloudkms.cryptoKeyVersions.",
+                                ],
                             ),
                             risk: risk.into(),
                             reason: reason.into(),
@@ -1265,24 +1265,20 @@ async fn enumerate_resources(
     }
 
     if add_service_accounts {
-        let url = format!(
-            "https://iam.googleapis.com/v1/projects/{}/serviceAccounts",
-            project_id
-        );
+        let url = format!("https://iam.googleapis.com/v1/projects/{}/serviceAccounts", project_id);
         let resp = client.get(&url).bearer_auth(token).send().await?;
         let status = resp.status();
         let body = resp.bytes().await?;
 
         if let Some(disabled) = service_disabled_message(&body)? {
-            verbose_warn!(
-                "GCP access-map: IAM API disabled for project {project_id}: {disabled}"
-            );
+            verbose_warn!("GCP access-map: IAM API disabled for project {project_id}: {disabled}");
         } else if status.is_success() {
             let json: Value = serde_json::from_slice(&body)?;
             if let Some(accounts) = json.get("accounts").and_then(|a| a.as_array()) {
-                let can_impersonate = perm_set
-                    .iter()
-                    .any(|p| p.contains("serviceAccounts.actAs") || p.contains("serviceAccounts.getAccessToken"));
+                let can_impersonate = perm_set.iter().any(|p| {
+                    p.contains("serviceAccounts.actAs")
+                        || p.contains("serviceAccounts.getAccessToken")
+                });
 
                 for sa in accounts {
                     if let Some(email) = sa.get("email").and_then(|e| e.as_str()) {
@@ -1313,10 +1309,7 @@ async fn enumerate_resources(
     }
 
     if add_firestore {
-        let url = format!(
-            "https://firestore.googleapis.com/v1/projects/{}/databases",
-            project_id
-        );
+        let url = format!("https://firestore.googleapis.com/v1/projects/{}/databases", project_id);
         let resp = client.get(&url).bearer_auth(token).send().await?;
         let status = resp.status();
         let body = resp.bytes().await?;
@@ -1363,10 +1356,7 @@ async fn enumerate_resources(
     }
 
     if add_spanner {
-        let url = format!(
-            "https://spanner.googleapis.com/v1/projects/{}/instances",
-            project_id
-        );
+        let url = format!("https://spanner.googleapis.com/v1/projects/{}/instances", project_id);
         let resp = client.get(&url).bearer_auth(token).send().await?;
         let status = resp.status();
         let body = resp.bytes().await?;

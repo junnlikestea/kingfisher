@@ -152,6 +152,30 @@ impl AccessMapCollector {
             .or_insert_with(|| AccessMapRequest::Harness { token: token.to_string(), fingerprint });
     }
 
+    pub fn record_openai(&self, token: &str, fingerprint: String) {
+        let key = xxhash_rust::xxh3::xxh3_64(format!("openai|{token}").as_bytes());
+        self.inner
+            .entry(key)
+            .or_insert_with(|| AccessMapRequest::OpenAI { token: token.to_string(), fingerprint });
+    }
+
+    pub fn record_anthropic(&self, token: &str, fingerprint: String) {
+        let key = xxhash_rust::xxh3::xxh3_64(format!("anthropic|{token}").as_bytes());
+        self.inner.entry(key).or_insert_with(|| AccessMapRequest::Anthropic {
+            token: token.to_string(),
+            fingerprint,
+        });
+    }
+
+    pub fn record_salesforce(&self, token: &str, instance: &str, fingerprint: String) {
+        let key = xxhash_rust::xxh3::xxh3_64(format!("salesforce|{instance}|{token}").as_bytes());
+        self.inner.entry(key).or_insert_with(|| AccessMapRequest::Salesforce {
+            token: token.to_string(),
+            instance: instance.to_string(),
+            fingerprint,
+        });
+    }
+
     pub fn into_requests(self) -> Vec<AccessMapRequest> {
         self.inner.iter().map(|entry| entry.value().clone()).collect()
     }
@@ -794,6 +818,36 @@ fn maybe_record_access_map(om: &OwnedBlobMatch, collector: Option<&AccessMapColl
                     if !value.is_empty() {
                         collector.record_harness(value, fp.clone());
                     }
+                }
+            }
+            if om.rule.id().starts_with("kingfisher.openai.") {
+                if let Some((_, value, ..)) = captures.iter().find(|(name, ..)| name == "TOKEN") {
+                    if !value.is_empty() {
+                        collector.record_openai(value, fp.clone());
+                    }
+                }
+            }
+            if om.rule.id().starts_with("kingfisher.anthropic.") {
+                if let Some((_, value, ..)) = captures.iter().find(|(name, ..)| name == "TOKEN") {
+                    if !value.is_empty() {
+                        collector.record_anthropic(value, fp.clone());
+                    }
+                }
+            }
+            if om.rule.id().starts_with("kingfisher.salesforce.") {
+                let token = captures
+                    .iter()
+                    .find(|(name, ..)| name == "TOKEN")
+                    .map(|(_, value, ..)| value.clone())
+                    .unwrap_or_default();
+                let instance = captures
+                    .iter()
+                    .find(|(name, ..)| name == "INSTANCE")
+                    .map(|(_, value, ..)| value.clone())
+                    .unwrap_or_default();
+
+                if !token.is_empty() && !instance.is_empty() {
+                    collector.record_salesforce(&token, &instance, fp.clone());
                 }
             }
         }

@@ -5,7 +5,7 @@ use clap::{Args, ValueEnum};
 /// Inspect a cloud credential and derive the effective identity and blast radius.
 #[derive(Args, Debug)]
 pub struct AccessMapArgs {
-    /// Cloud provider: aws | gcp | azure | github | gitlab | slack | postgres | mongodb | huggingface | gitea | bitbucket | buildkite | harness
+    /// Cloud provider: aws | gcp | azure | github | gitlab | slack | postgres | mongodb | huggingface | gitea | bitbucket | buildkite | harness | openai | anthropic | salesforce
     #[clap(value_parser, value_name = "PROVIDER")]
     pub provider: AccessMapProvider,
 
@@ -53,4 +53,10 @@ pub enum AccessMapProvider {
     Buildkite,
     /// Harness
     Harness,
+    /// OpenAI
+    Openai,
+    /// Anthropic
+    Anthropic,
+    /// Salesforce
+    Salesforce,
 }

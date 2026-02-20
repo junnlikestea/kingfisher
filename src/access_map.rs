@@ -4,6 +4,7 @@ use serde::Serialize;
 
 use crate::cli::commands::access_map::{AccessMapArgs, AccessMapProvider};
 
+mod anthropic;
 mod aws;
 mod azure;
 mod azure_devops;
@@ -16,8 +17,10 @@ mod gitlab;
 mod harness;
 mod huggingface;
 pub(crate) mod mongodb;
+mod openai;
 pub(crate) mod postgres;
 mod report;
+mod salesforce;
 mod slack;
 
 /// Trait for access map providers that map a single token to an access profile.
@@ -52,6 +55,9 @@ pub async fn run(args: AccessMapArgs) -> Result<()> {
         AccessMapProvider::Bitbucket => bitbucket::map_access(&args).await?,
         AccessMapProvider::Buildkite => buildkite::map_access(&args).await?,
         AccessMapProvider::Harness => harness::map_access(&args).await?,
+        AccessMapProvider::Openai => openai::map_access(&args).await?,
+        AccessMapProvider::Anthropic => anthropic::map_access(&args).await?,
+        AccessMapProvider::Salesforce => salesforce::map_access(&args).await?,
     };
 
     let json = serde_json::to_string_pretty(&result)?;
@@ -104,6 +110,12 @@ pub enum AccessMapRequest {
     Buildkite { token: String, fingerprint: String },
     /// A Harness API token (x-api-key).
     Harness { token: String, fingerprint: String },
+    /// An OpenAI API token.
+    OpenAI { token: String, fingerprint: String },
+    /// An Anthropic API token.
+    Anthropic { token: String, fingerprint: String },
+    /// A Salesforce access token plus instance domain.
+    Salesforce { token: String, instance: String, fingerprint: String },
 }
 
 /// Structured output describing the resolved identity and its risk profile.
@@ -304,6 +316,18 @@ pub async fn map_requests(requests: Vec<AccessMapRequest>) -> Vec<AccessMapResul
             AccessMapRequest::Harness { token, fingerprint } => {
                 (map_token(&HarnessMapper, &token).await, fingerprint)
             }
+            AccessMapRequest::OpenAI { token, fingerprint } => {
+                (map_token(&OpenAiMapper, &token).await, fingerprint)
+            }
+            AccessMapRequest::Anthropic { token, fingerprint } => {
+                (map_token(&AnthropicMapper, &token).await, fingerprint)
+            }
+            AccessMapRequest::Salesforce { token, instance, fingerprint } => (
+                salesforce::map_access_from_token_and_instance(&token, &instance)
+                    .await
+                    .unwrap_or_else(|err| build_failed_result("salesforce", "token", err)),
+                fingerprint,
+            ),
         };
 
         mapped.fingerprint = Some(fp);
@@ -432,6 +456,32 @@ impl TokenAccessMapper for HarnessMapper {
 
     async fn map_access_from_token(&self, token: &str) -> Result<AccessMapResult> {
         harness::map_access_from_token(token).await
+    }
+}
+
+/// OpenAI access mapper.
+pub struct OpenAiMapper;
+
+impl TokenAccessMapper for OpenAiMapper {
+    fn cloud_name(&self) -> &'static str {
+        "openai"
+    }
+
+    async fn map_access_from_token(&self, token: &str) -> Result<AccessMapResult> {
+        openai::map_access_from_token(token).await
+    }
+}
+
+/// Anthropic access mapper.
+pub struct AnthropicMapper;
+
+impl TokenAccessMapper for AnthropicMapper {
+    fn cloud_name(&self) -> &'static str {
+        "anthropic"
+    }
+
+    async fn map_access_from_token(&self, token: &str) -> Result<AccessMapResult> {
+        anthropic::map_access_from_token(token).await
     }
 }
 
