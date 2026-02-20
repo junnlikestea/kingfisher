@@ -852,6 +852,7 @@ fn maybe_record_access_map(om: &OwnedBlobMatch, collector: Option<&AccessMapColl
                     .iter()
                     .find(|(name, ..)| name == "INSTANCE")
                     .map(|(_, value, ..)| value.clone())
+                    .or_else(|| om.dependent_captures.get("INSTANCE").cloned())
                     .unwrap_or_default();
 
                 if !token.is_empty() && !instance.is_empty() {

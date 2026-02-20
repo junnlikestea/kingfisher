@@ -1,6 +1,6 @@
 rules:
   - name: Amplitude Secret Key
-    id: kingfisher.amplitude.``
+    id: kingfisher.amplitude.1
     pattern: |
       (?xi)
       \b

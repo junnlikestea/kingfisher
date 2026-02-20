@@ -265,9 +265,9 @@ kingfisher access-map harness ./harness.token --json-out harness.access-map.json
 - **Credential**: a single OpenAI API key string (read from a file for `kingfisher access-map openai <FILE>`).
 - **Token types supported**: OpenAI keys accepted by `Authorization: Bearer <TOKEN>` (for example `sk-...`, `sk-proj-...`, `sk-svcacct-...`).
 
-Kingfisher performs read-only enumeration via:
+Kingfisher performs read-only scope probing via:
 
-- `GET https://api.openai.com/v1/models` to list accessible models and infer organization ownership.
+- `GET https://api.openai.com/v1/models` to verify Models API read access and infer organization ownership (it does not enumerate or emit individual model resources in the access map).
 - `GET https://api.openai.com/v1/me` for token identity metadata when available.
 - `GET https://api.openai.com/v1/organization/projects` for project visibility when the key has permission (best-effort).
 
