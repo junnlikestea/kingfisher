@@ -4,7 +4,7 @@ use std::{
     time::Instant,
 };
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use bstr::ByteSlice;
 use gix::{
     date::{parse as parse_time, Time},
@@ -21,6 +21,11 @@ use crate::{
     git_metadata_graph::{GitMetadataGraph, RepositoryIndex},
 };
 
+/// Blobs smaller than this (in bytes) are skipped during enumeration.
+/// No meaningful secret (API key, token, password assignment) fits in fewer
+/// bytes, so filtering these avoids loading, hashing, and scanning overhead.
+pub const MIN_SCANNABLE_BLOB_SIZE: u64 = 20;
+
 // Convert "<seconds> <offset>" -- Time; fallback to the Unix-epoch on parse error
 #[inline]
 fn parse_sig_time<T: AsRef<[u8]>>(raw: T) -> Time {
@@ -30,10 +35,19 @@ fn parse_sig_time<T: AsRef<[u8]>>(raw: T) -> Time {
     }
 }
 
+/// How blobs are provided to the scanning pipeline.
+pub enum GitBlobSource {
+    /// Blobs were pre-computed (metadata path, diff path).
+    Precomputed(Vec<GitBlobMetadata>),
+    /// Enumerate blobs lazily from the ODB during parallel iteration,
+    /// overlapping enumeration with scanning.
+    StreamFromOdb,
+}
+
 pub struct GitRepoResult {
     pub path: PathBuf,
     pub repository: Repository,
-    pub blobs: Vec<GitBlobMetadata>,
+    pub blobs: GitBlobSource,
 }
 
 #[derive(Clone)]
@@ -116,11 +130,11 @@ impl<'a> GitRepoWithMetadataEnumerator<'a> {
 
         debug!("Built metadata graph in {:.6}s", started.elapsed().as_secs_f64());
 
-        // Compute metadata once, then get all blob IDs
+        // Compute metadata once, then get all blob IDs (in pack-ascending order)
         let meta_result = metadata_graph.get_repo_metadata(&object_index, &self.repo);
         let all_blobs = object_index.into_blobs();
 
-        // Assemble final blob list
+        // Assemble final blob list, preserving pack-ascending order for I/O locality
         let blobs = match meta_result {
             Err(e) => {
                 debug!("Failed to compute reachable blobs; ignoring metadata: {e}");
@@ -130,9 +144,8 @@ impl<'a> GitRepoWithMetadataEnumerator<'a> {
                     .collect()
             }
             Ok(metadata) => {
-                // Build map of blob -> appearances
-                let mut blob_map: HashMap<_, SmallVec<_>> =
-                    all_blobs.into_iter().map(|b| (b, SmallVec::new())).collect();
+                let mut blob_appearances: HashMap<ObjectId, SmallVec<_>> =
+                    HashMap::with_capacity_and_hasher(all_blobs.len(), Default::default());
 
                 for e in metadata {
                     let cm = match commit_metadata.get(&e.commit_oid) {
@@ -143,17 +156,19 @@ impl<'a> GitRepoWithMetadataEnumerator<'a> {
                         }
                     };
                     for (blob_oid, path) in e.introduced_blobs {
-                        blob_map
+                        blob_appearances
                             .entry(blob_oid)
                             .or_default()
                             .push(BlobAppearance { commit_metadata: cm.clone(), path });
                     }
                 }
 
-                // Filter out empty or ignored paths
-                blob_map
+                // Iterate in pack-ascending order (from RepositoryIndex) for I/O locality
+                all_blobs
                     .into_iter()
-                    .filter_map(|(blob_oid, appearances)| {
+                    .filter_map(|blob_oid| {
+                        let appearances =
+                            blob_appearances.remove(&blob_oid).unwrap_or_default();
                         if appearances.is_empty() {
                             return Some(GitBlobMetadata { blob_oid, first_seen: appearances });
                         }
@@ -184,7 +199,11 @@ impl<'a> GitRepoWithMetadataEnumerator<'a> {
             }
         };
 
-        Ok(GitRepoResult { repository: self.repo, path: self.path.to_owned(), blobs })
+        Ok(GitRepoResult {
+            repository: self.repo,
+            path: self.path.to_owned(),
+            blobs: GitBlobSource::Precomputed(blobs),
+        })
     }
 }
 
@@ -199,41 +218,11 @@ impl<'a> GitRepoEnumerator<'a> {
     }
 
     pub fn run(self) -> Result<GitRepoResult> {
-        use gix::{object::Kind, odb::store::iter::Ordering, prelude::*};
         let _span = debug_span!("enumerate_git", path = ?self.path).entered();
-        let odb = &self.repo.objects;
-        let mut blobs = Vec::with_capacity(64 * 1024);
-
-        for oid_result in odb
-            .iter()
-            .context("Failed to iterate object database")?
-            .with_ordering(Ordering::PackAscendingOffsetThenLooseLexicographical)
-        {
-            let oid = match oid_result {
-                Ok(oid) => oid,
-                Err(e) => {
-                    debug!("Failed to read object id: {e}");
-                    continue;
-                }
-            };
-            let hdr = match odb.header(oid) {
-                Ok(hdr) => hdr,
-                Err(e) => {
-                    debug!("Failed to read object header for {oid}: {e}");
-                    continue;
-                }
-            };
-
-            if hdr.kind() == Kind::Blob {
-                blobs.push(oid);
-            }
-        }
-
-        let blobs = blobs
-            .into_iter()
-            .map(|blob_oid| GitBlobMetadata { blob_oid, first_seen: Default::default() })
-            .collect();
-
-        Ok(GitRepoResult { repository: self.repo, path: self.path.to_owned(), blobs })
+        Ok(GitRepoResult {
+            repository: self.repo,
+            path: self.path.to_owned(),
+            blobs: GitBlobSource::StreamFromOdb,
+        })
     }
 }

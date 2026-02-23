@@ -30,7 +30,7 @@ use crate::{
     decompress::{decompress_file_to_temp, CompressedContent},
     findings_store,
     git_commit_metadata::CommitMetadata,
-    git_repo_enumerator::GitBlobMetadata,
+    git_repo_enumerator::{GitBlobMetadata, GitBlobSource, MIN_SCANNABLE_BLOB_SIZE},
     matcher::{Matcher, MatcherStats},
     open_git_repo_with_options,
     origin::{Origin, OriginSet},
@@ -482,52 +482,107 @@ impl<'a> rayon::iter::ParallelIterator for GitRepoResultIter<'a> {
         C: rayon::iter::plumbing::UnindexedConsumer<Self::Item>,
     {
         // ── shared state ──────────────────────────────────────────────
-        let repo_sync = self.inner.repository.into_sync();
+        let repo_sync = Arc::new(self.inner.repository.into_sync());
         let repo_path = Arc::new(self.inner.path.clone());
         let deadline = self.deadline;
         let flag = Arc::new(AtomicBool::new(false)); // first-timeout gate
 
-        self.inner
-            .blobs
-            .into_par_iter()
-            .with_min_len(1024)
-            .map_init(|| repo_sync.to_thread_local(), {
-                let repo_path = Arc::clone(&repo_path);
-                let flag = Arc::clone(&flag);
+        let load_blob = {
+            let repo_path = Arc::clone(&repo_path);
+            let flag = Arc::clone(&flag);
 
-                move |repo: &mut GixRepo, md| -> Result<(OriginSet, Blob)> {
-                    // ── 10-minute guard ──────────────────────────
-                    if StdInstant::now() > deadline {
-                        if flag.swap(true, Ordering::Relaxed) {
-                            bail!("__timeout_silenced__");
-                        }
-                        bail!("blob-read timeout (repo: {})", repo_path.display());
+            move |repo: &mut GixRepo, md: GitBlobMetadata| -> Result<(OriginSet, Blob)> {
+                if StdInstant::now() > deadline {
+                    if flag.swap(true, Ordering::Relaxed) {
+                        bail!("__timeout_silenced__");
                     }
-
-                    // ── load blob ────────────────────────────────
-                    let blob_id = md.blob_oid;
-                    let mut raw = repo.find_object(blob_id)?.try_into_blob()?;
-                    let blob = Blob::new(BlobId::from(&blob_id), std::mem::take(&mut raw.data));
-
-                    // ── build Origin — CLONE Arc & PathBuf ──────
-                    let origin = OriginSet::try_from_iter(md.first_seen.iter().map(|e| {
-                        Origin::from_git_repo_with_first_commit(
-                            Arc::clone(&repo_path),
-                            Arc::clone(&e.commit_metadata),
-                            String::from_utf8_lossy(&e.path).to_string(),
-                        )
-                    }))
-                    .unwrap_or_else(|| Origin::from_git_repo(Arc::clone(&repo_path)).into());
-
-                    Ok((origin, blob))
+                    bail!("blob-read timeout (repo: {})", repo_path.display());
                 }
-            })
-            .filter(|res| {
-                !matches!(res,
-                    Err(e) if e.to_string() == "__timeout_silenced__"
-                )
-            })
-            .drive_unindexed(consumer)
+
+                let blob_id = md.blob_oid;
+                let mut raw = repo.find_object(blob_id)?.try_into_blob()?;
+                let blob = Blob::new(BlobId::from(&blob_id), std::mem::take(&mut raw.data));
+
+                let origin = OriginSet::try_from_iter(md.first_seen.iter().map(|e| {
+                    Origin::from_git_repo_with_first_commit(
+                        Arc::clone(&repo_path),
+                        Arc::clone(&e.commit_metadata),
+                        String::from_utf8_lossy(&e.path).to_string(),
+                    )
+                }))
+                .unwrap_or_else(|| Origin::from_git_repo(Arc::clone(&repo_path)).into());
+
+                Ok((origin, blob))
+            }
+        };
+
+        let timeout_filter = |res: &Result<(OriginSet, Blob)>| -> bool {
+            !matches!(res, Err(e) if e.to_string() == "__timeout_silenced__")
+        };
+
+        match self.inner.blobs {
+            GitBlobSource::Precomputed(blobs) => {
+                let rs = Arc::clone(&repo_sync);
+                blobs
+                    .into_par_iter()
+                    .with_min_len(1024)
+                    .map_init(move || rs.to_thread_local(), load_blob)
+                    .filter(timeout_filter)
+                    .drive_unindexed(consumer)
+            }
+            GitBlobSource::StreamFromOdb => {
+                let (blob_tx, blob_rx) = crossbeam_channel::bounded(8192);
+                let enum_repo_sync = Arc::clone(&repo_sync);
+
+                std::thread::Builder::new()
+                    .name("odb_enumerator".to_string())
+                    .spawn(move || {
+                        use gix::{
+                            object::Kind,
+                            odb::store::iter::Ordering as OdbOrdering,
+                            prelude::*,
+                        };
+                        let repo = enum_repo_sync.to_thread_local();
+                        let odb = &repo.objects;
+                        let iter = match odb.iter() {
+                            Ok(i) => i,
+                            Err(_) => return,
+                        };
+                        for oid_result in iter.with_ordering(
+                            OdbOrdering::PackAscendingOffsetThenLooseLexicographical,
+                        ) {
+                            let oid = match oid_result {
+                                Ok(oid) => oid,
+                                Err(_) => continue,
+                            };
+                            let hdr = match odb.header(oid) {
+                                Ok(hdr) => hdr,
+                                Err(_) => continue,
+                            };
+                            if hdr.kind() == Kind::Blob
+                                && hdr.size() >= MIN_SCANNABLE_BLOB_SIZE
+                            {
+                                let md = GitBlobMetadata {
+                                    blob_oid: oid,
+                                    first_seen: Default::default(),
+                                };
+                                if blob_tx.send(md).is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                    })
+                    .expect("failed to spawn ODB enumerator thread");
+
+                let rs = Arc::clone(&repo_sync);
+                blob_rx
+                    .into_iter()
+                    .par_bridge()
+                    .map_init(move || rs.to_thread_local(), load_blob)
+                    .filter(timeout_filter)
+                    .drive_unindexed(consumer)
+            }
+        }
     }
 }
 
@@ -912,7 +967,7 @@ fn enumerate_git_diff_repo(
         blobs
     };
 
-    Ok(GitRepoResult { repository, path: path.to_owned(), blobs })
+    Ok(GitRepoResult { repository, path: path.to_owned(), blobs: GitBlobSource::Precomputed(blobs) })
 }
 
 fn synthesize_staged_commit(path: &Path, parent_ref: &str) -> Result<String> {
@@ -1052,7 +1107,7 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    use super::{enumerate_git_diff_repo, GitDiffConfig};
+    use super::{enumerate_git_diff_repo, GitBlobSource, GitDiffConfig};
     use anyhow::Result;
     use bstr::ByteSlice;
     use git2::{Repository as Git2Repository, Signature};
@@ -1146,8 +1201,12 @@ mod tests {
             false,
         )?;
 
-        assert_eq!(result.blobs.len(), 1, "expected the full branch tree to be enumerated");
-        let blob = &result.blobs[0];
+        let blobs = match result.blobs {
+            GitBlobSource::Precomputed(b) => b,
+            GitBlobSource::StreamFromOdb => panic!("expected Precomputed blobs from diff path"),
+        };
+        assert_eq!(blobs.len(), 1, "expected the full branch tree to be enumerated");
+        let blob = &blobs[0];
         assert_eq!(blob.first_seen.len(), 1);
         let appearance_path = blob.first_seen[0].path.to_str_lossy();
         assert_eq!(appearance_path, "secret.txt");

@@ -10,6 +10,8 @@ use gix::{
     prelude::*,
     ObjectId, OdbHandle,
 };
+
+use crate::git_repo_enumerator::MIN_SCANNABLE_BLOB_SIZE;
 use petgraph::{
     graph::{DiGraph, EdgeIndex, IndexType, NodeIndex},
     prelude::*,
@@ -161,7 +163,8 @@ impl RepositoryIndex {
             };
             match hdr.kind() {
                 Kind::Tree => num_trees += 1,
-                Kind::Blob => num_blobs += 1,
+                Kind::Blob if hdr.size() >= MIN_SCANNABLE_BLOB_SIZE => num_blobs += 1,
+                Kind::Blob => {}
                 Kind::Commit => num_commits += 1,
                 Kind::Tag => num_tags += 1,
             }
@@ -192,7 +195,8 @@ impl RepositoryIndex {
             };
             match hdr.kind() {
                 Kind::Tree => trees.insert(oid),
-                Kind::Blob => blobs.insert(oid),
+                Kind::Blob if hdr.size() >= MIN_SCANNABLE_BLOB_SIZE => blobs.insert(oid),
+                Kind::Blob => {}
                 Kind::Commit => commits.insert(oid),
                 Kind::Tag => tags.insert(oid),
             }

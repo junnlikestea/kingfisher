@@ -61,7 +61,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Result};
 use crossbeam_channel::Sender;
-pub use git_repo_enumerator::{GitRepoEnumerator, GitRepoResult, GitRepoWithMetadataEnumerator};
+pub use git_repo_enumerator::{
+    GitBlobSource, GitRepoEnumerator, GitRepoResult, GitRepoWithMetadataEnumerator,
+};
 pub use gix::{self, Repository, ThreadSafeRepository};
 use gix::{open::Options, open_opts};
 use globset::{Glob, GlobSet, GlobSetBuilder};
