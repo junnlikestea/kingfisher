@@ -28,13 +28,18 @@ impl<'a> BlobProcessor<'a> {
         no_dedup: bool,
         redact: bool,
         no_base64: bool,
+        fast_mode: bool,
     ) -> Result<Option<DatastoreMessage>> {
         let _span = debug_span!("matcher", temp_id = blob.temp_id()).entered();
         let t1 = Instant::now();
-        let language_hint = origin
-            .iter()
-            .find_map(|p| p.blob_path())
-            .and_then(|path| ContentInspector::default().guess_language(path, blob.bytes()));
+        let language_hint = if fast_mode {
+            None
+        } else {
+            origin
+                .iter()
+                .find_map(|p| p.blob_path())
+                .and_then(|path| ContentInspector::default().guess_language(path, blob.bytes()))
+        };
         let res =
             self.matcher.scan_blob(&blob, &origin, language_hint, redact, no_dedup, no_base64)?;
         let scan_us = t1.elapsed().as_micros();
@@ -66,7 +71,7 @@ impl<'a> BlobProcessor<'a> {
                 if matches.is_empty() {
                     return Ok(None);
                 }
-                let md = MetadataResult::from_blob_and_origin(&blob, &origin);
+                let md = MetadataResult::from_blob_and_origin(&blob, &origin, fast_mode);
                 let metadata = BlobMetadata {
                     id: blob.id(),
                     num_bytes: blob.len(),
@@ -117,12 +122,17 @@ struct MetadataResult {
     language: Option<String>,
 }
 impl MetadataResult {
-    fn from_blob_and_origin(blob: &Blob, origin: &OriginSet) -> MetadataResult {
+    fn from_blob_and_origin(blob: &Blob, origin: &OriginSet, fast_mode: bool) -> MetadataResult {
         let blob_path: Option<&'_ Path> = origin.iter().find_map(|p| p.blob_path());
         let bytes = blob.bytes();
-        let mime_essence = Some(tree_magic_mini::from_u8(bytes).to_string());
-        let inspector = ContentInspector::default();
-        let language = blob_path.and_then(|p| inspector.guess_language(p, bytes));
+        let mime_essence =
+            if fast_mode { None } else { Some(tree_magic_mini::from_u8(bytes).to_string()) };
+        let language = if fast_mode {
+            None
+        } else {
+            let inspector = ContentInspector::default();
+            blob_path.and_then(|p| inspector.guess_language(p, bytes))
+        };
         MetadataResult { mime_essence, language }
     }
 }

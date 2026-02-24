@@ -155,7 +155,7 @@ fn run_skiplist(skip_regex: Vec<String>, skip_skipword: Vec<String>) -> Result<u
         skip_aws_account: Vec::new(),
         skip_aws_account_file: None,
         no_base64: false,
-        fast: false,
+        turbo: false,
         no_inline_ignore: false,
         no_ignore_if_contains: false,
         validation_retries: 1,

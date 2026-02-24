@@ -151,9 +151,9 @@ pub struct ScanArgs {
     #[arg(global = true, long, default_value_t = false)]
     pub no_base64: bool,
 
-    /// Fast mode: equivalent to --commit-metadata=false --no-base64
-    #[arg(global = true, long, default_value_t = false)]
-    pub fast: bool,
+    /// Turbo mode: equivalent to --commit-metadata=false --no-base64 and disables MIME sniffing, language detection, and tree-sitter parsing
+    #[arg(global = true, long = "turbo", default_value_t = false)]
+    pub turbo: bool,
 
     /// Timeout for Git repository scanning in seconds
     #[arg(global = true, long, default_value_t = 1800, value_name = "SECONDS")]
@@ -490,7 +490,7 @@ impl ScanCommandArgs {
             self.scan_args.no_dedup = true;
         }
 
-        if self.scan_args.fast {
+        if self.scan_args.turbo {
             self.scan_args.no_base64 = true;
             self.scan_args.input_specifier_args.commit_metadata = false;
         }

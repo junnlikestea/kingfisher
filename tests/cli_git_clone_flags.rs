@@ -61,3 +61,55 @@ fn keep_clones_defaults_to_false() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn turbo_mode_applies_speed_first_defaults() -> anyhow::Result<()> {
+    let args = CommandLineArgs::try_parse_from([
+        "kingfisher",
+        "scan",
+        ".",
+        "--turbo",
+        "--no-update-check",
+    ])?;
+
+    let command = match args.command {
+        Command::Scan(scan_args) => scan_args,
+        other => panic!("unexpected command parsed: {:?}", other),
+    };
+
+    let scan_args = match command.into_operation()? {
+        ScanOperation::Scan(scan_args) => scan_args,
+        op => panic!("expected scan operation, got {:?}", op),
+    };
+
+    assert!(scan_args.turbo);
+    assert!(scan_args.no_base64);
+    assert!(!scan_args.input_specifier_args.commit_metadata);
+
+    Ok(())
+}
+
+#[test]
+fn fast_alias_still_enables_turbo_mode() -> anyhow::Result<()> {
+    let args = CommandLineArgs::try_parse_from([
+        "kingfisher",
+        "scan",
+        ".",
+        "--turbo",
+        "--no-update-check",
+    ])?;
+
+    let command = match args.command {
+        Command::Scan(scan_args) => scan_args,
+        other => panic!("unexpected command parsed: {:?}", other),
+    };
+
+    let scan_args = match command.into_operation()? {
+        ScanOperation::Scan(scan_args) => scan_args,
+        op => panic!("expected scan operation, got {:?}", op),
+    };
+
+    assert!(scan_args.turbo);
+
+    Ok(())
+}

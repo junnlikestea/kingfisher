@@ -174,7 +174,7 @@ rules:
         skip_aws_account: Vec::new(),
         skip_aws_account_file: None,
         no_base64: false,
-        fast: false,
+        turbo: false,
         extra_ignore_comments: Vec::new(),
         no_inline_ignore: false,
         no_ignore_if_contains: false,
@@ -223,7 +223,7 @@ rules:
 
 #[test]
 fn test_dedup_branch() -> Result<()> {
-    // A *single* runtime reused for both scans keeps the test fast
+    // A *single* runtime reused for both scans keeps the test turbo
     let rt = Runtime::new().unwrap();
 
     let findings_with_dups = run_scan(&rt, true)?; // keep duplicates

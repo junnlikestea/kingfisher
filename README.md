@@ -1,4 +1,4 @@
-# Kingfisher
+# Kingfisher: Open Source Secret Scanner with Live Validation
 
 <p align="center">
   <img src="docs/kingfisher_logo.png" alt="Kingfisher Logo" width="126" height="173" style="vertical-align: right;" />
@@ -7,15 +7,24 @@
 [![ghcr downloads](https://ghcr-badge.elias.eu.org/shield/mongodb/kingfisher/kingfisher)](https://github.com/mongodb/kingfisher/pkgs/container/kingfisher)<br>
 
 
-Kingfisher is a blazingly fast secret-scanning and **live validation** tool built in Rust.
+Kingfisher is an open source secret scanner and **live secret validation** tool built in Rust.
 
-It combines Intel's SIMD-accelerated regex engine (Hyperscan) with language-aware parsing to achieve high accuracy at massive scale, and **ships with hundreds of built-in rules** to detect, **validate**, and triage secrets before they ever reach production.  
+It combines Intel's SIMD-accelerated regex engine (Hyperscan) with language-aware parsing to achieve high accuracy at massive scale, and **ships with hundreds of built-in rules** to detect, **validate**, and triage leaked API keys, tokens, and credentials before they ever reach production.
 
-Designed for offensive security engineers and blue-teamers alike, Kingfisher helps you pivot across repo ecosystems, validate exposure paths, and hunt for developer-owned leaks that spill beyond the primary codebase.
+Designed for offensive security engineers and blue-team defenders alike, Kingfisher helps you scan repositories, cloud storage, chat, docs, and CI pipelines to find and verify exposed secrets quickly.
 
 </p>
 
 **Learn more:** [Introducing Kingfisher: Real‑Time Secret Detection and Validation](https://www.mongodb.com/blog/post/product-release-announcements/introducing-kingfisher-real-time-secret-detection-validation)
+
+## What Is Kingfisher?
+
+Kingfisher is a high-performance, open source secret detection tool for source code and developer platforms. If you are searching for a "GitHub secret scanner," "API key scanner," "token leak detection," or "Git secrets scanner," this project is built for that workflow.
+
+- Scan code, Git history, and integrated platforms (GitHub, GitLab, Azure Repos, Bitbucket, Gitea, Hugging Face, Jira, Confluence, Slack, Docker, AWS S3, and Google Cloud Storage)
+- Validate discovered credentials against provider APIs to reduce false positives
+- Revoke supported secrets directly from the CLI
+- Generate JSON, SARIF, and HTML outputs for security teams, compliance, and CI
 
 ## Key Features
 
@@ -60,7 +69,7 @@ See ([docs/COMPARISON.md](docs/COMPARISON.md))
 kingfisher scan /path/to/scan --view-report
 ```
 NOTE: Replay has been slowed down for demo
-![alt text](docs/kingfisher-usage-01.gif)
+![Kingfisher secret scanning demo](docs/kingfisher-usage-01.gif)
 
 ## Report Viewer Demo
 Explore Kingfisher's built-in report viewer and its `--access-map`, which can show what the token (AWS, GCP, Azure, GitHub, GitLab, and Slack...more coming) can actually access.
@@ -77,13 +86,14 @@ Serving access-map viewer at http://127.0.0.1:7890 (Ctrl+C to stop)
 kingfisher scan /path/to/scan --access-map --view-report
 ```
 
-![alt text](docs/kingfisher-usage-access-map-01.gif)
+![Kingfisher access map and report viewer demo](docs/kingfisher-usage-access-map-01.gif)
 
 **Click to view video**
 [![Demo](docs/demos/findings-thumbnail.png)](https://github.com/user-attachments/assets/d33ee7a6-c60a-4e42-88e0-ac03cb429a46)
 
 # Table of Contents
 
+- [What Is Kingfisher?](#what-is-kingfisher)
 - [Key Features](#key-features)
 - [Compliance and Audit-Ready Scans](#compliance-and-audit-ready-scans)
 - [Benchmark Results](#benchmark-results)
@@ -312,9 +322,10 @@ kingfisher scan /path/to/code
 # Scan without validation
 kingfisher scan ~/src/myrepo --no-validate
 
-# Fast mode: run as fast as possible by disabling Git commit metadata and Base64 decoding
-# (findings omit commit context and Base64-encoded secrets)
-kingfisher scan ~/src/myrepo --fast
+# Turbo mode: run as fast as possible by disabling Git commit metadata, Base64 decoding,
+# MIME sniffing, language detection, and tree-sitter parsing
+# (findings omit commit context, Base64-only matches, MIME type, and language metadata)
+kingfisher scan ~/src/myrepo --turbo
 
 # Display only secrets confirmed active by third‑party APIs
 kingfisher scan /path/to/repo --only-valid
@@ -398,9 +409,10 @@ cat /path/to/file.py | kingfisher scan -
 # Limit maximum file size scanned (default: 256 MB)
 kingfisher scan /some/file --max-file-size 500
 
-# Fast mode: equivalent to --commit-metadata=false --no-base64 for maximum speed
-# No Git commit metadata (author, date, hash) or Base64 decoding in findings
-kingfisher scan /path/to/repo --fast
+# Turbo mode: equivalent to --commit-metadata=false --no-base64 and disables MIME sniffing,
+# language detection/tree-sitter parsing for maximum speed
+# No Git commit metadata (author, date, hash), Base64 decoding, MIME, or language metadata in findings
+kingfisher scan /path/to/repo --turbo
 
 # Scan using a rule family
 kingfisher scan /path/to/repo --rule kingfisher.aws
