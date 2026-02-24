@@ -46,11 +46,7 @@ pub fn extract_sqlite_contents(path: &Path) -> Result<Vec<(String, Vec<u8>)>> {
                 results.push((logical_name, sql_text.into_bytes()));
             }
             Err(e) => {
-                debug!(
-                    "Failed to dump table '{}' from {}: {e:#}",
-                    table_name,
-                    path.display()
-                );
+                debug!("Failed to dump table '{}' from {}: {e:#}", table_name, path.display());
             }
         }
     }
@@ -136,10 +132,7 @@ fn dump_table(
 }
 
 fn column_names(conn: &Connection, table_name: &str) -> Result<Vec<String>> {
-    let query = format!(
-        "PRAGMA table_info(\"{}\")",
-        table_name.replace('"', "\"\"")
-    );
+    let query = format!("PRAGMA table_info(\"{}\")", table_name.replace('"', "\"\""));
     let mut stmt = conn.prepare(&query)?;
     let names = stmt
         .query_map([], |row| {
@@ -207,10 +200,7 @@ mod tests {
         let (_tmp, path) = create_test_db();
         let results = extract_sqlite_contents(&path).unwrap();
 
-        let user_info = results
-            .iter()
-            .find(|(n, _)| n == "user_info.sql")
-            .unwrap();
+        let user_info = results.iter().find(|(n, _)| n == "user_info.sql").unwrap();
         let sql = String::from_utf8_lossy(&user_info.1);
 
         assert!(sql.contains("CREATE TABLE"));
@@ -224,8 +214,7 @@ mod tests {
         let tmp = NamedTempFile::new().unwrap();
         let path = tmp.path().to_path_buf();
         let conn = Connection::open(&path).unwrap();
-        conn.execute_batch("CREATE TABLE empty_table (id INTEGER);")
-            .unwrap();
+        conn.execute_batch("CREATE TABLE empty_table (id INTEGER);").unwrap();
 
         let results = extract_sqlite_contents(&path).unwrap();
         assert_eq!(results.len(), 1);

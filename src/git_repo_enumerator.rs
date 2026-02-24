@@ -87,10 +87,9 @@ impl<'a> GitRepoWithMetadataEnumerator<'a> {
 
         let mut metadata_graph = GitMetadataGraph::with_capacity(object_index.num_commits());
         let mut scratch = Vec::with_capacity(4 * 1024 * 1024);
-        let mut commit_metadata =
-            HashMap::with_capacity_and_hasher(object_index.num_commits(), Default::default());
 
-        // Collect commit metadata and build commit graph
+        // Build commit graph first; materialize committer metadata only for commits that
+        // actually introduce blobs.
         for commit_oid in object_index.commits() {
             let commit = match odb.find_commit(commit_oid, &mut scratch) {
                 Ok(commit) => commit,
@@ -113,25 +112,16 @@ impl<'a> GitRepoWithMetadataEnumerator<'a> {
                 let parent_idx = metadata_graph.get_commit_idx(parent_oid, None);
                 metadata_graph.add_commit_edge(parent_idx, commit_idx);
             }
-
-            let committer = &commit.committer;
-            // let author = &commit.author;
-
-            commit_metadata.insert(
-                *commit_oid,
-                Arc::new(CommitMetadata {
-                    commit_id: *commit_oid,
-                    committer_name: String::from_utf8_lossy(&committer.name).into_owned(),
-                    committer_email: String::from_utf8_lossy(&committer.email).into_owned(),
-                    committer_timestamp: parse_sig_time(committer.time),
-                }),
-            );
         }
 
         debug!("Built metadata graph in {:.6}s", started.elapsed().as_secs_f64());
 
         // Compute metadata once, then get all blob IDs (in pack-ascending order)
-        let meta_result = metadata_graph.get_repo_metadata(&object_index, &self.repo);
+        let meta_result = metadata_graph.get_repo_metadata(
+            &object_index,
+            &self.repo,
+            self.exclude_globset.as_deref(),
+        );
         let all_blobs = object_index.into_blobs();
 
         // Assemble final blob list, preserving pack-ascending order for I/O locality
@@ -144,22 +134,44 @@ impl<'a> GitRepoWithMetadataEnumerator<'a> {
                     .collect()
             }
             Ok(metadata) => {
+                let mut commit_metadata: HashMap<ObjectId, Arc<CommitMetadata>> =
+                    HashMap::with_capacity_and_hasher(0, Default::default());
                 let mut blob_appearances: HashMap<ObjectId, SmallVec<_>> =
                     HashMap::with_capacity_and_hasher(all_blobs.len(), Default::default());
 
                 for e in metadata {
-                    let cm = match commit_metadata.get(&e.commit_oid) {
-                        Some(cm) => cm,
-                        None => {
-                            debug!("Missing commit metadata for {}", e.commit_oid);
-                            continue;
-                        }
+                    if e.introduced_blobs.is_empty() {
+                        continue;
+                    }
+
+                    let cm = if let Some(cm) = commit_metadata.get(&e.commit_oid) {
+                        cm.clone()
+                    } else {
+                        let commit = match odb.find_commit(&e.commit_oid, &mut scratch) {
+                            Ok(commit) => commit,
+                            Err(err) => {
+                                debug!(
+                                    "Failed to load commit metadata for {}: {err}",
+                                    e.commit_oid
+                                );
+                                continue;
+                            }
+                        };
+                        let committer = &commit.committer;
+                        let parsed = Arc::new(CommitMetadata {
+                            commit_id: e.commit_oid,
+                            committer_name: String::from_utf8_lossy(&committer.name).into_owned(),
+                            committer_email: String::from_utf8_lossy(&committer.email).into_owned(),
+                            committer_timestamp: parse_sig_time(committer.time),
+                        });
+                        commit_metadata.insert(e.commit_oid, Arc::clone(&parsed));
+                        parsed
                     };
                     for (blob_oid, path) in e.introduced_blobs {
                         blob_appearances
                             .entry(blob_oid)
                             .or_default()
-                            .push(BlobAppearance { commit_metadata: cm.clone(), path });
+                            .push(BlobAppearance { commit_metadata: Arc::clone(&cm), path });
                     }
                 }
 
@@ -167,8 +179,7 @@ impl<'a> GitRepoWithMetadataEnumerator<'a> {
                 all_blobs
                     .into_iter()
                     .filter_map(|blob_oid| {
-                        let appearances =
-                            blob_appearances.remove(&blob_oid).unwrap_or_default();
+                        let appearances = blob_appearances.remove(&blob_oid).unwrap_or_default();
                         if appearances.is_empty() {
                             return Some(GitBlobMetadata { blob_oid, first_seen: appearances });
                         }

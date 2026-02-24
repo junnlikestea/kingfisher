@@ -364,19 +364,13 @@ pub fn extract_pyc_strings(path: &Path) -> Result<Vec<u8>> {
     let (header_size, code_format) = match pyc_version_info(magic) {
         Some(info) => info,
         None => {
-            debug!(
-                "unsupported .pyc magic number {magic} in {}, skipping",
-                path.display()
-            );
+            debug!("unsupported .pyc magic number {magic} in {}, skipping", path.display());
             return Ok(Vec::new());
         }
     };
 
     if data.len() < header_size {
-        bail!(
-            ".pyc header requires {header_size} bytes but file is only {} bytes",
-            data.len()
-        );
+        bail!(".pyc header requires {header_size} bytes but file is only {} bytes", data.len());
     }
 
     let marshal_data = &data[header_size..];
@@ -496,7 +490,7 @@ mod tests {
         buf.extend_from_slice(&marshal_small_tuple(&[])); // cellvars
         buf.extend_from_slice(&marshal_short_ascii("<test>")); // filename
         buf.extend_from_slice(&marshal_short_ascii("<module>")); // name
-        // firstlineno
+                                                                 // firstlineno
         buf.extend_from_slice(&1i32.to_le_bytes());
         // 1 trailing object: lnotab
         buf.extend_from_slice(&marshal_string(b""));
@@ -552,10 +546,8 @@ mod tests {
     #[test]
     fn extracts_strings_from_code_object() {
         let mut data = make_pyc_header(3413, 16);
-        let consts = marshal_small_tuple(&[
-            marshal_none(),
-            marshal_short_ascii("ghp_abc123def456"),
-        ]);
+        let consts =
+            marshal_small_tuple(&[marshal_none(), marshal_short_ascii("ghp_abc123def456")]);
         let names = marshal_small_tuple(&[marshal_short_ascii("api_key")]);
         let code = marshal_code_38(consts, names);
         data.extend_from_slice(&code);
@@ -666,13 +658,8 @@ mod tests {
     #[test]
     fn handles_nested_tuples() {
         let mut data = make_pyc_header(3413, 16);
-        let inner = marshal_small_tuple(&[
-            marshal_short_ascii("inner_secret"),
-        ]);
-        let outer = marshal_small_tuple(&[
-            marshal_short_ascii("outer"),
-            inner,
-        ]);
+        let inner = marshal_small_tuple(&[marshal_short_ascii("inner_secret")]);
+        let outer = marshal_small_tuple(&[marshal_short_ascii("outer"), inner]);
         data.extend_from_slice(&outer);
         let tmp = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(tmp.path(), &data).unwrap();
@@ -711,7 +698,7 @@ mod tests {
         buf.extend_from_slice(&marshal_short_ascii("<test>")); // filename
         buf.extend_from_slice(&marshal_short_ascii("<module>")); // name
         buf.extend_from_slice(&marshal_short_ascii("<module>")); // qualname
-        // firstlineno
+                                                                 // firstlineno
         buf.extend_from_slice(&1i32.to_le_bytes());
         // 2 trailing objects: linetable, exceptiontable
         buf.extend_from_slice(&marshal_string(b""));
@@ -722,10 +709,8 @@ mod tests {
     #[test]
     fn extracts_strings_from_code_object_v313() {
         let mut data = make_pyc_header(3627, 16); // Python 3.14
-        let consts = marshal_small_tuple(&[
-            marshal_none(),
-            marshal_short_ascii("sk-proj-ABCDEF123456"),
-        ]);
+        let consts =
+            marshal_small_tuple(&[marshal_none(), marshal_short_ascii("sk-proj-ABCDEF123456")]);
         let names = marshal_small_tuple(&[marshal_short_ascii("openai_key")]);
         let code = marshal_code_313(consts, names);
         data.extend_from_slice(&code);
@@ -733,10 +718,7 @@ mod tests {
         std::fs::write(tmp.path(), &data).unwrap();
         let result = extract_pyc_strings(tmp.path()).unwrap();
         let result_str = String::from_utf8_lossy(&result);
-        assert!(
-            result_str.contains("sk-proj-ABCDEF123456"),
-            "missing secret from consts"
-        );
+        assert!(result_str.contains("sk-proj-ABCDEF123456"), "missing secret from consts");
         assert!(result_str.contains("openai_key"), "missing name");
         assert!(result_str.contains("<test>"), "missing filename");
     }

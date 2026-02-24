@@ -1,7 +1,7 @@
 use std::{collections::BinaryHeap, time::Instant};
 
 use anyhow::{bail, Context, Result};
-use bstr::BString;
+use bstr::{BString, ByteSlice};
 use fixedbitset::FixedBitSet;
 use gix::{
     hashtable::{hash_map, HashMap},
@@ -10,6 +10,7 @@ use gix::{
     prelude::*,
     ObjectId, OdbHandle,
 };
+use globset::GlobSet;
 
 use crate::git_repo_enumerator::MIN_SCANNABLE_BLOB_SIZE;
 use petgraph::{
@@ -137,43 +138,11 @@ pub(crate) struct RepositoryIndex {
 impl RepositoryIndex {
     pub(crate) fn new(odb: &OdbHandle) -> Result<Self> {
         use gix::{odb::store::iter::Ordering, prelude::*};
-        let mut num_tags = 0;
-        let mut num_trees = 0;
-        let mut num_blobs = 0;
-        let mut num_commits = 0;
+        let mut tree_oids = Vec::new();
+        let mut commit_oids = Vec::new();
+        let mut blob_oids = Vec::new();
+        let mut tag_oids = Vec::new();
 
-        for oid_result in odb
-            .iter()
-            .context("Failed to iterate object database")?
-            .with_ordering(Ordering::PackLexicographicalThenLooseLexicographical)
-        {
-            let oid = match oid_result {
-                Ok(oid) => oid,
-                Err(e) => {
-                    debug!("Failed to read object id: {e}");
-                    continue;
-                }
-            };
-            let hdr = match odb.header(oid) {
-                Ok(hdr) => hdr,
-                Err(e) => {
-                    debug!("Failed to read object header for {oid}: {e}");
-                    continue;
-                }
-            };
-            match hdr.kind() {
-                Kind::Tree => num_trees += 1,
-                Kind::Blob if hdr.size() >= MIN_SCANNABLE_BLOB_SIZE => num_blobs += 1,
-                Kind::Blob => {}
-                Kind::Commit => num_commits += 1,
-                Kind::Tag => num_tags += 1,
-            }
-        }
-
-        let mut trees = ObjectIdBimap::with_capacity(num_trees);
-        let mut commits = ObjectIdBimap::with_capacity(num_commits);
-        let mut blobs = ObjectIdBimap::with_capacity(num_blobs);
-        let mut tags = ObjectIdBimap::with_capacity(num_tags);
         for oid_result in odb
             .iter()
             .context("Failed to iterate object database")?
@@ -194,13 +163,32 @@ impl RepositoryIndex {
                 }
             };
             match hdr.kind() {
-                Kind::Tree => trees.insert(oid),
-                Kind::Blob if hdr.size() >= MIN_SCANNABLE_BLOB_SIZE => blobs.insert(oid),
+                Kind::Tree => tree_oids.push(oid),
+                Kind::Blob if hdr.size() >= MIN_SCANNABLE_BLOB_SIZE => blob_oids.push(oid),
                 Kind::Blob => {}
-                Kind::Commit => commits.insert(oid),
-                Kind::Tag => tags.insert(oid),
+                Kind::Commit => commit_oids.push(oid),
+                Kind::Tag => tag_oids.push(oid),
             }
         }
+
+        let mut trees = ObjectIdBimap::with_capacity(tree_oids.len());
+        let mut commits = ObjectIdBimap::with_capacity(commit_oids.len());
+        let mut blobs = ObjectIdBimap::with_capacity(blob_oids.len());
+        let mut tags = ObjectIdBimap::with_capacity(tag_oids.len());
+
+        for oid in tree_oids {
+            trees.insert(oid);
+        }
+        for oid in commit_oids {
+            commits.insert(oid);
+        }
+        for oid in blob_oids {
+            blobs.insert(oid);
+        }
+        for oid in tag_oids {
+            tags.insert(oid);
+        }
+
         Ok(Self { trees, commits, blobs, tags })
     }
     pub(crate) fn num_commits(&self) -> usize {
@@ -293,6 +281,7 @@ impl GitMetadataGraph {
         self,
         repo_index: &RepositoryIndex,
         repo: &gix::Repository,
+        exclude_globset: Option<&GlobSet>,
     ) -> Result<Vec<CommitBlobMetadata>> {
         let _span =
             error_span!("get_repo_metadata", path = repo.path().display().to_string()).entered();
@@ -340,6 +329,7 @@ impl GitMetadataGraph {
                     visit_tree(
                         repo,
                         &mut symbols,
+                        exclude_globset,
                         repo_index,
                         &mut num_trees_introduced,
                         &mut num_blobs_introduced,
@@ -409,10 +399,51 @@ impl GitMetadataGraph {
     }
 }
 
+#[inline]
+fn path_is_excluded(path: &BString, exclude_globset: Option<&GlobSet>) -> bool {
+    let Some(gs) = exclude_globset else {
+        return false;
+    };
+    match path.to_path() {
+        Ok(p) => gs.is_match(p),
+        Err(_) => false,
+    }
+}
+
+#[inline]
+fn tree_path_is_excluded(path: &BString, exclude_globset: Option<&GlobSet>) -> bool {
+    if path_is_excluded(path, exclude_globset) {
+        return true;
+    }
+    let Some(gs) = exclude_globset else {
+        return false;
+    };
+    let mut dir_path = path.clone();
+    dir_path.push(b'/');
+    match dir_path.to_path() {
+        Ok(p) => gs.is_match(p),
+        Err(_) => false,
+    }
+}
+
+#[inline]
+fn render_symbol_path(symbols: &BStringTable, path: &[Symbol]) -> BString {
+    let mut buf = Vec::new();
+    if let Some(first) = path.first() {
+        buf.extend_from_slice(symbols.resolve(*first));
+        for s in &path[1..] {
+            buf.push(b'/');
+            buf.extend_from_slice(symbols.resolve(*s));
+        }
+    }
+    BString::from(buf)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn visit_tree(
     repo: &gix::Repository,
     symbols: &mut BStringTable,
+    exclude_globset: Option<&GlobSet>,
     repo_index: &RepositoryIndex,
     num_trees_introduced: &mut usize,
     num_blobs_introduced: &mut usize,
@@ -450,6 +481,12 @@ fn visit_tree(
                     if seen.insert_tree(child_idx)? {
                         let mut new_path = name_path.clone();
                         new_path.push(symbols.get_or_intern(child.filename.into()));
+                        if exclude_globset.is_some() {
+                            let path = render_symbol_path(symbols, &new_path);
+                            if tree_path_is_excluded(&path, exclude_globset) {
+                                continue;
+                            }
+                        }
                         tree_worklist.push((new_path, child.oid.to_owned()));
                     }
                 }
@@ -460,18 +497,14 @@ fn visit_tree(
                     };
                     if !seen.contains_blob(child_idx)? {
                         blobs_encountered.push(child_idx);
-                        *num_blobs_introduced += 1;
                         let mut new_path = name_path.clone();
                         new_path.push(symbols.get_or_intern(child.filename.into()));
-                        let mut buf = Vec::new();
-                        if let Some(first) = new_path.first() {
-                            buf.extend_from_slice(symbols.resolve(*first));
-                            for s in &new_path[1..] {
-                                buf.push(b'/');
-                                buf.extend_from_slice(symbols.resolve(*s));
-                            }
+                        let path = render_symbol_path(symbols, &new_path);
+                        if path_is_excluded(&path, exclude_globset) {
+                            continue;
                         }
-                        introduced.push((child.oid.to_owned(), BString::from(buf)));
+                        *num_blobs_introduced += 1;
+                        introduced.push((child.oid.to_owned(), path));
                     }
                 }
             }

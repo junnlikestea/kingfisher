@@ -34,6 +34,7 @@ use crate::{
     matcher::{Matcher, MatcherStats},
     open_git_repo_with_options,
     origin::{Origin, OriginSet},
+    pyc::extract_pyc_strings,
     rule_profiling::ConcurrentRuleProfiler,
     rules_database::RulesDatabase,
     scanner::{
@@ -42,7 +43,6 @@ use crate::{
         util::{is_compressed_file, is_pyc_file, is_sqlite_file},
     },
     scanner_pool::ScannerPool,
-    pyc::extract_pyc_strings,
     sqlite::extract_sqlite_contents,
     DirectoryResult, EnumeratorConfig, EnumeratorFileResult, FileResult, FilesystemEnumerator,
     FoundInput, GitDiffConfig, GitRepoEnumerator, GitRepoResult, GitRepoWithMetadataEnumerator,
@@ -584,9 +584,7 @@ impl<'a> rayon::iter::ParallelIterator for GitRepoResultIter<'a> {
                     .name("odb_enumerator".to_string())
                     .spawn(move || {
                         use gix::{
-                            object::Kind,
-                            odb::store::iter::Ordering as OdbOrdering,
-                            prelude::*,
+                            object::Kind, odb::store::iter::Ordering as OdbOrdering, prelude::*,
                         };
                         let repo = enum_repo_sync.to_thread_local();
                         let odb = &repo.objects;
@@ -594,9 +592,9 @@ impl<'a> rayon::iter::ParallelIterator for GitRepoResultIter<'a> {
                             Ok(i) => i,
                             Err(_) => return,
                         };
-                        for oid_result in iter.with_ordering(
-                            OdbOrdering::PackAscendingOffsetThenLooseLexicographical,
-                        ) {
+                        for oid_result in iter
+                            .with_ordering(OdbOrdering::PackAscendingOffsetThenLooseLexicographical)
+                        {
                             let oid = match oid_result {
                                 Ok(oid) => oid,
                                 Err(_) => continue,
@@ -605,9 +603,7 @@ impl<'a> rayon::iter::ParallelIterator for GitRepoResultIter<'a> {
                                 Ok(hdr) => hdr,
                                 Err(_) => continue,
                             };
-                            if hdr.kind() == Kind::Blob
-                                && hdr.size() >= MIN_SCANNABLE_BLOB_SIZE
-                            {
+                            if hdr.kind() == Kind::Blob && hdr.size() >= MIN_SCANNABLE_BLOB_SIZE {
                                 let md = GitBlobMetadata {
                                     blob_oid: oid,
                                     first_seen: Default::default(),
@@ -1013,7 +1009,11 @@ fn enumerate_git_diff_repo(
         blobs
     };
 
-    Ok(GitRepoResult { repository, path: path.to_owned(), blobs: GitBlobSource::Precomputed(blobs) })
+    Ok(GitRepoResult {
+        repository,
+        path: path.to_owned(),
+        blobs: GitBlobSource::Precomputed(blobs),
+    })
 }
 
 fn synthesize_staged_commit(path: &Path, parent_ref: &str) -> Result<String> {

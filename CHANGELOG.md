@@ -9,6 +9,9 @@ All notable changes to this project will be documented in this file.
 - Performance: pipelined ODB enumeration — scanning now begins while blob OIDs are still being discovered, overlapping I/O with pattern matching.
 - Performance: skip blobs smaller than 20 bytes during enumeration (too small to contain any secret).
 - Performance: preserve pack-ascending blob order in the metadata path for better I/O locality when Rayon splits work.
+- Performance: defer Git committer metadata materialization until commits actually introduce scannable blobs, reducing unnecessary string/time parsing work.
+- Performance: push `--exclude` filtering into Git tree traversal so excluded paths/subtrees are pruned before blob-introduction bookkeeping.
+- Performance: make Git repository object indexing single-pass (removed the extra ODB scan in `RepositoryIndex::new`).
 
 ## [v1.84.0]
 - Added/updated `pipedrive` and `amplitude` rules
