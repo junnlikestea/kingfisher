@@ -3,16 +3,15 @@ rules:
     name: Redis URI Connection String
     # Hyperscan-compatible pattern (no lookbehind)
     # Host supports hostnames, IPv4, and IPv6 in brackets
-    # Supports both "username:password@host" and ":password@host" (password-only)
     pattern: |
       (?xi)
-      (?: redis | rediss | redis\+sentinel ) ://                      (?# URI scheme )
-        (?: (?P<username>[a-zA-Z0-9%;._~!$&'()*+,;=-]{1,})            (?# username - optional )
+      (?: redis | rediss | redis\+sentinel ) ://
+        (?: (?P<username>[a-zA-Z0-9%;._~!$&'()*+,;=-]{1,})
           :
         )?
-        (?P<password>[a-zA-Z0-9%;._~!$&'()*+,;=/+-]{8,})              (?# password - min 8 chars )
-      @ (?P<host>[a-zA-Z0-9_.-]{1,}) (?: :(?P<port>\d{1,5}))?         (?# hostname and optional port )
-      (?: / (?P<db>\d{1,2}))?                                         (?# optional database number )
+        (?P<password>[a-zA-Z0-9%;._~!$&'()*+,;:=/+-]{8,})
+      @ (?P<host>[a-zA-Z0-9_.-]{1,}) (?: :(?P<port>\d{1,5}))?
+      (?: / (?P<db>\d{1,2}))?
       \b
 
     pattern_requirements:
