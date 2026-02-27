@@ -65,6 +65,38 @@ fn is_adf(value: &serde_json::Value) -> bool {
         .unwrap_or(false)
 }
 
+fn flatten_adf_fields(issue_value: &mut serde_json::Value) {
+    // Jira Cloud API v3 returns descriptions as Atlassian Document Format (ADF),
+    // a nested JSON tree whose leaf text nodes contain the actual content.
+    // Flatten ADF to a plain string so the secret scanner can match against it.
+    if let Some(desc) = issue_value.pointer("/fields/description") {
+        if is_adf(desc) {
+            let plain_text = extract_adf_text(desc);
+            if let Some(fields) = issue_value.pointer_mut("/fields") {
+                fields["description"] = serde_json::Value::String(plain_text);
+            }
+        }
+    }
+
+    // Apply the same ADF flattening to comment bodies.
+    if let Some(comments) = issue_value.pointer_mut("/fields/comment/comments") {
+        if let Some(arr) = comments.as_array_mut() {
+            for comment in arr.iter_mut() {
+                let plain_text = comment.get("body").and_then(|body| {
+                    if is_adf(body) {
+                        Some(extract_adf_text(body))
+                    } else {
+                        None
+                    }
+                });
+                if let Some(plain_text) = plain_text {
+                    comment["body"] = serde_json::Value::String(plain_text);
+                }
+            }
+        }
+    }
+}
+
 pub async fn fetch_issues(
     jira_url: Url,
     jql: &str,
@@ -105,35 +137,7 @@ pub async fn download_issues_to_dir(
     for issue in issues {
         let mut issue_value = serde_json::to_value(&issue)?;
 
-        // Jira Cloud API v3 returns descriptions as Atlassian Document Format (ADF),
-        // a nested JSON tree whose leaf text nodes contain the actual content.
-        // Flatten ADF to a plain string so the secret scanner can match against it.
-        if let Some(desc) = issue_value.pointer("/fields/description") {
-            if is_adf(desc) {
-                let plain_text = extract_adf_text(desc);
-                if let Some(fields) = issue_value.pointer_mut("/fields") {
-                    fields["description"] = serde_json::Value::String(plain_text);
-                }
-            }
-        }
-
-        // Apply the same ADF flattening to comment bodies.
-        if let Some(comments) = issue_value.pointer_mut("/fields/comment/comments") {
-            if let Some(arr) = comments.as_array_mut() {
-                for comment in arr.iter_mut() {
-                    let plain_text = comment.get("body").and_then(|body| {
-                        if is_adf(body) {
-                            Some(extract_adf_text(body))
-                        } else {
-                            None
-                        }
-                    });
-                    if let Some(plain_text) = plain_text {
-                        comment["body"] = serde_json::Value::String(plain_text);
-                    }
-                }
-            }
-        }
+        flatten_adf_fields(&mut issue_value);
 
         let file = output_dir.join(format!("{}.json", issue.key));
         std::fs::write(&file, serde_json::to_vec(&issue_value)?)?;
@@ -144,7 +148,7 @@ pub async fn download_issues_to_dir(
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_adf_text, is_adf};
+    use super::{extract_adf_text, flatten_adf_fields, is_adf};
     use serde_json::json;
 
     #[test]
@@ -202,5 +206,121 @@ mod tests {
         });
         let text = extract_adf_text(&value);
         assert_eq!(text.trim_end(), "first\nsecond");
+    }
+
+    #[test]
+    fn extract_adf_text_returns_empty_for_non_adf_values() {
+        let value = json!("plain description string");
+        let text = extract_adf_text(&value);
+        assert_eq!(text, "");
+
+        let number_value = json!(42);
+        let number_text = extract_adf_text(&number_value);
+        assert_eq!(number_text, "");
+
+        let null_value = json!(null);
+        let null_text = extract_adf_text(&null_value);
+        assert_eq!(null_text, "");
+    }
+
+    #[test]
+    fn extract_adf_text_handles_missing_content_fields() {
+        let doc_without_content = json!({
+            "type": "doc",
+            "version": 1
+        });
+        let text = extract_adf_text(&doc_without_content);
+        assert_eq!(text, "");
+
+        let paragraph_without_content = json!({
+            "type": "paragraph"
+        });
+        let para_text = extract_adf_text(&paragraph_without_content);
+        assert_eq!(para_text, "");
+    }
+
+    #[test]
+    fn extract_adf_text_handles_empty_doc() {
+        let empty_doc = json!({
+            "type": "doc",
+            "version": 1,
+            "content": []
+        });
+        let text = extract_adf_text(&empty_doc);
+        assert_eq!(text, "");
+    }
+
+    #[test]
+    fn extract_adf_text_handles_lists_and_code_blocks() {
+        let value = json!({
+            "type": "doc",
+            "version": 1,
+            "content": [
+                {
+                    "type": "bulletList",
+                    "content": [
+                        {
+                            "type": "listItem",
+                            "content": [{
+                                "type": "paragraph",
+                                "content": [{"type": "text", "text": "item1"}]
+                            }]
+                        },
+                        {
+                            "type": "listItem",
+                            "content": [{
+                                "type": "paragraph",
+                                "content": [{"type": "text", "text": "item2"}]
+                            }]
+                        }
+                    ]
+                },
+                {
+                    "type": "codeBlock",
+                    "content": [{"type": "text", "text": "code"}]
+                }
+            ]
+        });
+        let text = extract_adf_text(&value);
+        assert_eq!(text.trim_end(), "item1\nitem2\ncode");
+    }
+
+    #[test]
+    fn flatten_adf_fields_converts_comment_bodies() {
+        let mut issue_value = json!({
+            "fields": {
+                "comment": {
+                    "comments": [
+                        {
+                            "body": {
+                                "type": "doc",
+                                "version": 1,
+                                "content": [{
+                                    "type": "paragraph",
+                                    "content": [{"type": "text", "text": "secret"}]
+                                }]
+                            }
+                        }
+                    ]
+                }
+            }
+        });
+        flatten_adf_fields(&mut issue_value);
+        let body = issue_value
+            .pointer("/fields/comment/comments/0/body")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        assert_eq!(body, "secret");
+    }
+
+    #[test]
+    fn flatten_adf_fields_handles_missing_description() {
+        let mut issue_value = json!({
+            "fields": {
+                "summary": "no description here"
+            }
+        });
+        flatten_adf_fields(&mut issue_value);
+        assert!(issue_value.pointer("/fields/description").is_none());
     }
 }
