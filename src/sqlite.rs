@@ -1,7 +1,7 @@
 use std::fmt::Write as FmtWrite;
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use rusqlite::{Connection, OpenFlags};
 use tracing::debug;
 
@@ -85,7 +85,13 @@ fn dump_table(
     remaining_budget: usize,
 ) -> Result<String> {
     let mut out = String::with_capacity(4096);
-    writeln!(out, "{create_sql};")?;
+    let create_statement = format!("{create_sql};\n");
+    if create_statement.len() > remaining_budget {
+        bail!(
+            "CREATE TABLE statement for '{table_name}' exceeds remaining size budget ({remaining_budget} bytes)"
+        );
+    }
+    out.push_str(&create_statement);
 
     let col_names = column_names(conn, table_name)?;
     if col_names.is_empty() {
@@ -266,5 +272,21 @@ mod tests {
         assert!(sql.contains("INSERT INTO \"odd\"\"name\""));
         assert!(sql.contains("\"val\""));
         assert!(sql.contains("'secret'"));
+    }
+
+    #[test]
+    fn respects_remaining_budget_before_writing_create_statement() {
+        let (_tmp, path) = create_test_db();
+        let conn = Connection::open(&path).unwrap();
+
+        let err = dump_table(
+            &conn,
+            "user_info",
+            "CREATE TABLE user_info (id INTEGER PRIMARY KEY, username TEXT, api_key TEXT)",
+            8,
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("exceeds remaining size budget"));
     }
 }

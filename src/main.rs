@@ -242,6 +242,7 @@ async fn async_main(args: CommandLineArgs) -> Result<()> {
                             view::ensure_port_available(
                                 scan_args.view_report_port,
                                 &scan_args.view_report_address,
+                                "--view-report-port",
                             )?;
                         }
                         let view_scan_started_at = chrono::Local::now();

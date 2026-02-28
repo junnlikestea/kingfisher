@@ -52,14 +52,19 @@ struct AppState {
     report: Option<Vec<u8>>,
 }
 
-pub fn ensure_port_available(port: u16, address: &str) -> Result<()> {
+fn addr_in_use_error(port: u16, flag_name: &str) -> anyhow::Error {
+    anyhow!(
+        "Port {} is already in use. Re-run with {} <PORT> to choose a different port.",
+        port,
+        flag_name
+    )
+}
+
+pub fn ensure_port_available(port: u16, address: &str, flag_name: &str) -> Result<()> {
     let addr: std::net::IpAddr =
         address.parse().context("Invalid bind address for report viewer")?;
     StdTcpListener::bind((addr, port)).map_err(|err| match err.kind() {
-        std::io::ErrorKind::AddrInUse => anyhow!(
-            "Port {} is already in use. Re-run with --port <PORT> to choose a different port.",
-            port
-        ),
+        std::io::ErrorKind::AddrInUse => addr_in_use_error(port, flag_name),
         _ => err.into(),
     })?;
     Ok(())
@@ -93,10 +98,7 @@ pub async fn run(args: ViewArgs) -> Result<()> {
     let addr: std::net::IpAddr =
         args.address.parse().context("Invalid bind address for report viewer")?;
     let listener = TcpListener::bind((addr, args.port)).await.map_err(|err| match err.kind() {
-        std::io::ErrorKind::AddrInUse => anyhow!(
-            "Port {} is already in use. Re-run with --port <PORT> to choose a different port.",
-            args.port
-        ),
+        std::io::ErrorKind::AddrInUse => addr_in_use_error(args.port, "--port"),
         _ => err.into(),
     })?;
 
@@ -243,4 +245,18 @@ fn expand_tilde(path: &Path) -> Result<PathBuf> {
     }
 
     Ok(path.to_path_buf())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ensure_port_available;
+
+    #[test]
+    fn ensure_port_available_uses_passed_flag_name_in_error() {
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let err = ensure_port_available(port, "127.0.0.1", "--view-report-port").unwrap_err();
+        assert!(err.to_string().contains("--view-report-port <PORT>"));
+    }
 }
