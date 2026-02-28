@@ -661,11 +661,15 @@ pub async fn fetch_jira_issues(
     };
     let output_dir = output_dir.join("jira_issues");
     let _paths = jira::download_issues_to_dir(
-        jira_url,
+        &jira_url,
         jql,
         max_results,
         global_args.ignore_certs,
         &output_dir,
+        jira::DownloadIssueArtifactsOptions {
+            include_comments: args.input_specifier_args.jira_include_comments,
+            include_changelog: args.input_specifier_args.jira_include_changelog,
+        },
     )
     .await?;
     Ok(vec![output_dir])

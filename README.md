@@ -224,6 +224,8 @@ kingfisher scan docker ghcr.io/org/image:latest
 KF_JIRA_TOKEN="token" kingfisher scan jira --url https://jira.company.com --jql "project = SEC"
 ```
 
+Add `--include-comments` and/or `--include-changelog` to expand the scan beyond the issue body.
+
 ### 16: Scan Confluence pages
 
 ```bash
@@ -528,6 +530,12 @@ kingfisher scan azure --organization my-org
 # Scan Jira issues
 KF_JIRA_TOKEN="token" kingfisher scan jira --url https://jira.company.com \
   --jql "project = TEST AND status = Open"
+
+# Scan Jira issues, comments, and changelog entries
+KF_JIRA_TOKEN="token" kingfisher scan jira --url https://jira.company.com \
+  --jql "project = TEST AND status = Open" \
+  --include-comments \
+  --include-changelog
 
 # Scan Confluence pages
 KF_CONFLUENCE_TOKEN="token" kingfisher scan confluence --url https://confluence.company.com \

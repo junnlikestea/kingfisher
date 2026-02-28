@@ -847,6 +847,18 @@ KF_JIRA_TOKEN="token" kingfisher scan jira --url https://jira.company.com \
     --max-results 500
 ```
 
+### Include Jira comments and changelog entries
+
+```bash
+KF_JIRA_TOKEN="token" kingfisher scan jira --url https://jira.company.com \
+    --jql "project = TEST AND status = Open" \
+    --include-comments \
+    --include-changelog
+```
+
+`--include-comments` writes and scans per-issue `comments.json` artifacts.  
+`--include-changelog` writes and scans per-issue `changelog.json` artifacts.
+
 ### Scan the last 1,000 Jira issues
 
 ```bash
