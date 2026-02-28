@@ -281,6 +281,19 @@ fn jira_auth_header() -> Option<String> {
     std::env::var("KF_JIRA_TOKEN").ok().map(|token| format!("Bearer {}", token))
 }
 
+fn jira_relative_base_url(jira_url: &Url) -> Url {
+    let mut base_url = jira_url.clone();
+    if !base_url.path().ends_with('/') {
+        let new_path = if base_url.path().is_empty() {
+            "/".to_string()
+        } else {
+            format!("{}/", base_url.path())
+        };
+        base_url.set_path(&new_path);
+    }
+    base_url
+}
+
 fn normalize_issue(issue: &JiraIssue) -> Result<serde_json::Value> {
     let mut issue_value = serde_json::to_value(issue)?;
     flatten_adf_fields(&mut issue_value);
@@ -340,11 +353,12 @@ pub async fn fetch_comments(
     let client = build_http_client(ignore_certs)?;
     let mut start_at = 0;
     let mut all_comments = Vec::new();
+    let base_url = jira_relative_base_url(jira_url);
 
     loop {
-        let url = jira_url
+        let url = base_url
             .join(&format!(
-                "/rest/api/latest/issue/{issue_key}/comment?startAt={start_at}&maxResults={JIRA_COMMENTS_PAGE_SIZE}"
+                "rest/api/latest/issue/{issue_key}/comment?startAt={start_at}&maxResults={JIRA_COMMENTS_PAGE_SIZE}"
             ))
             .context("Failed to construct Jira comments URL")?;
 
@@ -788,5 +802,32 @@ mod tests {
         assert_eq!(comments.len(), 3);
         assert_eq!(comments[0].pointer("/body"), Some(&json!("first")));
         assert_eq!(comments[2].pointer("/body"), Some(&json!("third")));
+    }
+
+    #[tokio::test]
+    async fn fetch_comments_preserves_base_path() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/jira/rest/api/latest/issue/TEST-1/comment"))
+            .and(query_param("startAt", "0"))
+            .and(query_param("maxResults", &JIRA_COMMENTS_PAGE_SIZE.to_string()))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "comments": [
+                    {"id": "1", "body": "first"}
+                ],
+                "startAt": 0,
+                "maxResults": JIRA_COMMENTS_PAGE_SIZE,
+                "total": 1
+            })))
+            .mount(&server)
+            .await;
+
+        let jira_url = Url::parse(&format!("{}/jira", server.uri())).expect("server URL");
+        let comments =
+            fetch_comments(&jira_url, "TEST-1", false).await.expect("comments should be fetched");
+
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].pointer("/body"), Some(&json!("first")));
     }
 }

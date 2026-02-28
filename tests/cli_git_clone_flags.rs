@@ -96,10 +96,7 @@ fn positional_git_url_examples_parse() -> anyhow::Result<()> {
         ("github.com/kubernetes/kubernetes", "https://github.com/kubernetes/kubernetes"),
         ("https://github.com/org/repo", "https://github.com/org/repo"),
         ("gitlab.com/gitlab-org/gitlab", "https://gitlab.com/gitlab-org/gitlab"),
-        (
-            "https://gitlab.com/namespace/project.git",
-            "https://gitlab.com/namespace/project.git",
-        ),
+        ("https://gitlab.com/namespace/project.git", "https://gitlab.com/namespace/project.git"),
     ];
 
     for (input, expected) in examples {
@@ -147,31 +144,6 @@ fn turbo_mode_applies_speed_first_defaults() -> anyhow::Result<()> {
     assert!(scan_args.turbo);
     assert!(scan_args.no_base64);
     assert!(!scan_args.input_specifier_args.commit_metadata);
-
-    Ok(())
-}
-
-#[test]
-fn fast_alias_still_enables_turbo_mode() -> anyhow::Result<()> {
-    let args = CommandLineArgs::try_parse_from([
-        "kingfisher",
-        "scan",
-        ".",
-        "--turbo",
-        "--no-update-check",
-    ])?;
-
-    let command = match args.command {
-        Command::Scan(scan_args) => scan_args,
-        other => panic!("unexpected command parsed: {:?}", other),
-    };
-
-    let scan_args = match command.into_operation()? {
-        ScanOperation::Scan(scan_args) => scan_args,
-        op => panic!("expected scan operation, got {:?}", op),
-    };
-
-    assert!(scan_args.turbo);
 
     Ok(())
 }

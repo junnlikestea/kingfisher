@@ -92,13 +92,11 @@ fn dump_table(
         return Ok(out);
     }
 
-    let columns_fragment = col_names
-        .iter()
-        .map(|c| format!("\"{}\"", c.replace('"', "\"\"")))
-        .collect::<Vec<_>>()
-        .join(",");
+    let columns_fragment =
+        col_names.iter().map(|c| sqlite_quoted_identifier(c)).collect::<Vec<_>>().join(",");
 
-    let query = format!("SELECT * FROM \"{}\"", table_name.replace('"', "\"\""));
+    let quoted_table_name = sqlite_quoted_identifier(table_name);
+    let query = format!("SELECT * FROM {quoted_table_name}");
     let mut stmt = conn.prepare(&query)?;
     let col_count = col_names.len();
 
@@ -115,7 +113,7 @@ fn dump_table(
             break;
         }
 
-        write!(out, "INSERT INTO \"{table_name}\" ({columns_fragment}) VALUES (")?;
+        write!(out, "INSERT INTO {quoted_table_name} ({columns_fragment}) VALUES (")?;
 
         for i in 0..col_count {
             if i > 0 {
@@ -132,7 +130,7 @@ fn dump_table(
 }
 
 fn column_names(conn: &Connection, table_name: &str) -> Result<Vec<String>> {
-    let query = format!("PRAGMA table_info(\"{}\")", table_name.replace('"', "\"\""));
+    let query = format!("PRAGMA table_info({})", sqlite_quoted_identifier(table_name));
     let mut stmt = conn.prepare(&query)?;
     let names = stmt
         .query_map([], |row| {
@@ -141,6 +139,10 @@ fn column_names(conn: &Connection, table_name: &str) -> Result<Vec<String>> {
         })?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(names)
+}
+
+fn sqlite_quoted_identifier(identifier: &str) -> String {
+    format!("\"{}\"", identifier.replace('"', "\"\""))
 }
 
 fn write_value(out: &mut String, row: &rusqlite::Row<'_>, idx: usize) -> Result<()> {
@@ -245,5 +247,24 @@ mod tests {
         let sql = String::from_utf8_lossy(&results[0].1);
         assert!(sql.contains("'it''s a test'"));
         assert!(sql.contains("NULL"));
+    }
+
+    #[test]
+    fn escapes_quoted_table_names_in_generated_sql() {
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_path_buf();
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE \"odd\"\"name\" (id INTEGER PRIMARY KEY, val TEXT);
+             INSERT INTO \"odd\"\"name\" VALUES (1, 'secret');",
+        )
+        .unwrap();
+
+        let results = extract_sqlite_contents(&path).unwrap();
+        let sql = String::from_utf8_lossy(&results[0].1);
+
+        assert!(sql.contains("INSERT INTO \"odd\"\"name\""));
+        assert!(sql.contains("\"val\""));
+        assert!(sql.contains("'secret'"));
     }
 }
