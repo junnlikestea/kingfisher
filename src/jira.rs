@@ -27,7 +27,7 @@ fn extract_adf_text(node: &serde_json::Value) -> String {
                 return "\n".to_string();
             }
 
-            let text = if let Some(arr) = map.get("content").and_then(|v| v.as_array()) {
+            let mut text = if let Some(arr) = map.get("content").and_then(|v| v.as_array()) {
                 match node_type {
                     Some("table") => join_children_with_separator(arr, "\n"),
                     Some("tableRow") => join_children_with_separator(arr, " "),
