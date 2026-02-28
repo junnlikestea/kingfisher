@@ -647,7 +647,18 @@ impl DetailsReporter {
         let root = ds.clone_root();
         let jira_dir = root.join("jira_issues");
         if path.starts_with(&jira_dir) {
-            let key = path.file_stem()?.to_string_lossy();
+            let relative = path.strip_prefix(&jira_dir).ok()?;
+            let mut components = relative.components();
+            let key = if components.clone().count() > 1 {
+                components
+                    .next()
+                    .and_then(|component| component.as_os_str().to_str())
+                    .filter(|segment| !segment.is_empty())
+                    .map(std::borrow::Cow::from)
+            } else {
+                None
+            }
+            .or_else(|| path.file_stem().map(|stem| stem.to_string_lossy()))?;
             Some(format!("{}/browse/{}", jira_url, key))
         } else {
             None
@@ -1739,6 +1750,8 @@ mod tests {
                 azure_repo_type: AzureRepoType::Source,
                 jira_url: None,
                 jql: None,
+                jira_include_comments: false,
+                jira_include_changelog: false,
                 confluence_url: None,
                 cql: None,
                 slack_query: None,

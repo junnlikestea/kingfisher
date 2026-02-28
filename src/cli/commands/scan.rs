@@ -427,6 +427,8 @@ impl ScanCommandArgs {
                     scan_args.input_specifier_args.jira_url = Some(args.url);
                     scan_args.input_specifier_args.jql = Some(args.jql);
                     scan_args.input_specifier_args.max_results = args.max_results;
+                    scan_args.input_specifier_args.jira_include_comments = args.include_comments;
+                    scan_args.input_specifier_args.jira_include_changelog = args.include_changelog;
                     None
                 }
                 ScanInputCommand::Confluence(args) => {
@@ -699,9 +701,17 @@ pub struct JiraScanArgs {
     #[arg(long, alias = "jql")]
     pub jql: String,
 
-    /// Maximum number of results to fetch
+    /// Maximum number of Jira issues to fetch
     #[arg(long = "max-results", default_value_t = 100)]
     pub max_results: usize,
+
+    /// Include Jira issue comments in the scan
+    #[arg(long = "include-comments", default_value_t = false)]
+    pub include_comments: bool,
+
+    /// Include Jira issue changelog entries in the scan
+    #[arg(long = "include-changelog", default_value_t = false)]
+    pub include_changelog: bool,
 }
 
 #[derive(Args, Debug, Clone)]

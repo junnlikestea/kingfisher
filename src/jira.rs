@@ -7,6 +7,14 @@ use url::Url;
 // Re-export the Issue type from gouqi so callers don't depend on the crate.
 pub use gouqi::Issue as JiraIssue;
 
+const JIRA_COMMENTS_PAGE_SIZE: u32 = 1000;
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DownloadIssueArtifactsOptions {
+    pub include_comments: bool,
+    pub include_changelog: bool,
+}
+
 /// Recursively extracts plain text from an Atlassian Document Format (ADF) node.
 ///
 /// Jira Cloud API v3 returns issue descriptions as ADF — a nested JSON structure
@@ -232,26 +240,87 @@ fn flatten_adf_fields(issue_value: &mut serde_json::Value) {
     }
 }
 
-pub async fn fetch_issues(
-    jira_url: Url,
-    jql: &str,
-    max_results: usize,
-    ignore_certs: bool,
-) -> Result<Vec<JiraIssue>> {
-    // build a &str without any trailing `/`
-    let base = jira_url.as_str().trim_end_matches('/');
+fn flatten_comment_bodies(comments: &mut [serde_json::Value]) {
+    for comment in comments {
+        let plain_text = comment.get("body").and_then(|body| {
+            if is_adf(body) {
+                Some(extract_adf_text(body))
+            } else {
+                None
+            }
+        });
+        if let Some(plain_text) = plain_text {
+            if let Some(comment_obj) = comment.as_object_mut() {
+                comment_obj.insert(
+                    "body".to_string(),
+                    serde_json::Value::String(plain_text.trim_end_matches('\n').to_string()),
+                );
+            }
+        }
+    }
+}
 
-    let client = Client::builder()
+fn build_http_client(ignore_certs: bool) -> Result<Client> {
+    Client::builder()
         .danger_accept_invalid_certs(ignore_certs)
         .build()
-        .context("Failed to build HTTP client")?;
+        .context("Failed to build HTTP client")
+}
 
+fn build_jira_client(jira_url: &Url, ignore_certs: bool) -> Result<Jira> {
+    let base = jira_url.as_str().trim_end_matches('/');
+    let client = build_http_client(ignore_certs)?;
     let credentials = match std::env::var("KF_JIRA_TOKEN") {
         Ok(token) => Credentials::Bearer(token),
         Err(_) => Credentials::Anonymous,
     };
+    Ok(Jira::from_client(base.to_string(), credentials, client)?)
+}
 
-    let jira = Jira::from_client(base.to_string(), credentials, client)?;
+fn jira_auth_header() -> Option<String> {
+    std::env::var("KF_JIRA_TOKEN").ok().map(|token| format!("Bearer {}", token))
+}
+
+fn normalize_issue(issue: &JiraIssue) -> Result<serde_json::Value> {
+    let mut issue_value = serde_json::to_value(issue)?;
+    flatten_adf_fields(&mut issue_value);
+    Ok(issue_value)
+}
+
+fn extract_embedded_comments(issue: &JiraIssue) -> Result<Option<(Vec<serde_json::Value>, bool)>> {
+    let Some(comments) = issue.comments() else {
+        return Ok(None);
+    };
+
+    let is_complete = comments.start_at + comments.comments.len() as u32 >= comments.total;
+    let mut comments_json = comments
+        .comments
+        .into_iter()
+        .map(serde_json::to_value)
+        .collect::<serde_json::Result<Vec<_>>>()?;
+    flatten_comment_bodies(&mut comments_json);
+    Ok(Some((comments_json, is_complete)))
+}
+
+fn issue_artifact_dir(output_dir: &PathBuf, issue_key: &str) -> PathBuf {
+    output_dir.join(issue_key)
+}
+
+#[derive(serde::Deserialize)]
+struct JiraCommentsPage {
+    comments: Vec<serde_json::Value>,
+    #[serde(rename = "startAt")]
+    start_at: u32,
+    total: u32,
+}
+
+pub async fn fetch_issues(
+    jira_url: &Url,
+    jql: &str,
+    max_results: usize,
+    ignore_certs: bool,
+) -> Result<Vec<JiraIssue>> {
+    let jira = build_jira_client(jira_url, ignore_certs)?;
 
     let search_options = SearchOptions::builder().max_results(max_results as u64).build();
 
@@ -259,32 +328,122 @@ pub async fn fetch_issues(
     Ok(results.issues)
 }
 
+pub async fn fetch_comments(
+    jira_url: &Url,
+    issue_key: &str,
+    ignore_certs: bool,
+) -> Result<Vec<serde_json::Value>> {
+    if !issue_key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        anyhow::bail!("Invalid Jira issue key: {issue_key}");
+    }
+
+    let client = build_http_client(ignore_certs)?;
+    let mut start_at = 0;
+    let mut all_comments = Vec::new();
+
+    loop {
+        let url = jira_url
+            .join(&format!(
+                "/rest/api/latest/issue/{issue_key}/comment?startAt={start_at}&maxResults={JIRA_COMMENTS_PAGE_SIZE}"
+            ))
+            .context("Failed to construct Jira comments URL")?;
+
+        let mut request = client.get(url);
+        if let Some(auth) = jira_auth_header() {
+            request = request.header("Authorization", auth);
+        }
+
+        let response = request.send().await.context("Failed to fetch Jira comments")?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Jira comments API returned HTTP {status}: {}",
+                body.chars().take(500).collect::<String>()
+            );
+        }
+
+        let page = response
+            .json::<JiraCommentsPage>()
+            .await
+            .context("Failed to parse Jira comments JSON")?;
+        let received = page.comments.len() as u32;
+        all_comments.extend(page.comments);
+
+        if received == 0 || start_at + received >= page.total {
+            break;
+        }
+
+        start_at = page.start_at + received;
+    }
+
+    flatten_comment_bodies(&mut all_comments);
+    Ok(all_comments)
+}
+
+pub async fn fetch_changelog(
+    jira_url: &Url,
+    issue_key: &str,
+    ignore_certs: bool,
+) -> Result<gouqi::Changelog> {
+    let jira = build_jira_client(jira_url, ignore_certs)?;
+    Ok(jira.issues().changelog(issue_key).await?)
+}
+
 pub async fn download_issues_to_dir(
-    jira_url: Url,
+    jira_url: &Url,
     jql: &str,
     max_results: usize,
     ignore_certs: bool,
     output_dir: &PathBuf,
+    options: DownloadIssueArtifactsOptions,
 ) -> Result<Vec<PathBuf>> {
     std::fs::create_dir_all(output_dir)?;
     let issues = fetch_issues(jira_url, jql, max_results, ignore_certs).await?;
     let mut paths = Vec::new();
     for issue in issues {
-        let mut issue_value = serde_json::to_value(&issue)?;
+        let issue_dir = issue_artifact_dir(output_dir, &issue.key);
+        std::fs::create_dir_all(&issue_dir)?;
 
-        flatten_adf_fields(&mut issue_value);
-
-        let file = output_dir.join(format!("{}.json", issue.key));
+        let issue_value = normalize_issue(&issue)?;
+        let file = issue_dir.join("issue.json");
         std::fs::write(&file, serde_json::to_vec(&issue_value)?)?;
         paths.push(file);
+
+        if options.include_comments {
+            let comments = match extract_embedded_comments(&issue)? {
+                Some((comments, true)) => comments,
+                Some((_, false)) | None => {
+                    fetch_comments(jira_url, &issue.key, ignore_certs).await?
+                }
+            };
+            let file = issue_dir.join("comments.json");
+            std::fs::write(&file, serde_json::to_vec(&comments)?)?;
+            paths.push(file);
+        }
+
+        if options.include_changelog {
+            let changelog = fetch_changelog(jira_url, &issue.key, ignore_certs).await?;
+            let file = issue_dir.join("changelog.json");
+            std::fs::write(&file, serde_json::to_vec(&changelog)?)?;
+            paths.push(file);
+        }
     }
     Ok(paths)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_adf_text, flatten_adf_fields, is_adf};
+    use super::{
+        extract_adf_text, extract_embedded_comments, fetch_comments, flatten_adf_fields,
+        flatten_comment_bodies, is_adf, JIRA_COMMENTS_PAGE_SIZE,
+    };
     use serde_json::json;
+    use url::Url;
+    use wiremock::{
+        matchers::{method, path, query_param},
+        Mock, MockServer, ResponseTemplate,
+    };
 
     #[test]
     fn is_adf_detects_doc_root() {
@@ -508,5 +667,126 @@ mod tests {
         });
         flatten_adf_fields(&mut issue_value);
         assert!(issue_value.pointer("/fields/description").is_none());
+    }
+
+    #[test]
+    fn flatten_comment_bodies_converts_adf_comment_bodies() {
+        let mut comments = vec![json!({
+            "id": "1",
+            "body": {
+                "type": "doc",
+                "version": 1,
+                "content": [{
+                    "type": "paragraph",
+                    "content": [{"type": "text", "text": "ghp_test_secret"}]
+                }]
+            }
+        })];
+
+        flatten_comment_bodies(&mut comments);
+
+        assert_eq!(comments[0].pointer("/body"), Some(&json!("ghp_test_secret")));
+    }
+
+    #[test]
+    fn extract_embedded_comments_preserves_empty_comment_arrays() {
+        let issue: super::JiraIssue = serde_json::from_value(json!({
+            "self": "https://jira.example.com/rest/api/latest/issue/TEST-1",
+            "key": "TEST-1",
+            "id": "10000",
+            "fields": {
+                "comment": {
+                    "comments": [],
+                    "self": "https://jira.example.com/rest/api/latest/issue/TEST-1/comment",
+                    "maxResults": 0,
+                    "total": 0,
+                    "startAt": 0
+                }
+            }
+        }))
+        .expect("issue should deserialize");
+
+        let (comments, is_complete) = extract_embedded_comments(&issue)
+            .expect("embedded comments should serialize")
+            .expect("comment wrapper should deserialize");
+
+        assert!(comments.is_empty());
+        assert!(is_complete);
+    }
+
+    #[test]
+    fn extract_embedded_comments_marks_partial_comment_pages_incomplete() {
+        let issue: super::JiraIssue = serde_json::from_value(json!({
+            "self": "https://jira.example.com/rest/api/latest/issue/TEST-1",
+            "key": "TEST-1",
+            "id": "10000",
+            "fields": {
+                "comment": {
+                    "comments": [
+                        {
+                            "self": "https://jira.example.com/rest/api/latest/issue/TEST-1/comment/1",
+                            "id": "1",
+                            "body": "first"
+                        }
+                    ],
+                    "self": "https://jira.example.com/rest/api/latest/issue/TEST-1/comment",
+                    "maxResults": 1,
+                    "total": 2,
+                    "startAt": 0
+                }
+            }
+        }))
+        .expect("issue should deserialize");
+
+        let (_comments, is_complete) = extract_embedded_comments(&issue)
+            .expect("embedded comments should serialize")
+            .expect("comment wrapper should deserialize");
+
+        assert!(!is_complete);
+    }
+
+    #[tokio::test]
+    async fn fetch_comments_paginates_all_pages() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/rest/api/latest/issue/TEST-1/comment"))
+            .and(query_param("startAt", "0"))
+            .and(query_param("maxResults", &JIRA_COMMENTS_PAGE_SIZE.to_string()))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "comments": [
+                    {"id": "1", "body": "first"},
+                    {"id": "2", "body": "second"}
+                ],
+                "startAt": 0,
+                "maxResults": JIRA_COMMENTS_PAGE_SIZE,
+                "total": 3
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/rest/api/latest/issue/TEST-1/comment"))
+            .and(query_param("startAt", "2"))
+            .and(query_param("maxResults", &JIRA_COMMENTS_PAGE_SIZE.to_string()))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "comments": [
+                    {"id": "3", "body": "third"}
+                ],
+                "startAt": 2,
+                "maxResults": JIRA_COMMENTS_PAGE_SIZE,
+                "total": 3
+            })))
+            .mount(&server)
+            .await;
+
+        let comments =
+            fetch_comments(&Url::parse(&server.uri()).expect("server URL"), "TEST-1", false)
+                .await
+                .expect("comments should be fetched");
+
+        assert_eq!(comments.len(), 3);
+        assert_eq!(comments[0].pointer("/body"), Some(&json!("first")));
+        assert_eq!(comments[2].pointer("/body"), Some(&json!("third")));
     }
 }
