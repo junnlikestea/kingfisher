@@ -10,146 +10,182 @@ pub use gouqi::Issue as JiraIssue;
 /// Recursively extracts plain text from an Atlassian Document Format (ADF) node.
 ///
 /// Jira Cloud API v3 returns issue descriptions as ADF — a nested JSON structure
-/// rather than a plain string. This function walks the content tree and collects
-/// all leaf `"type": "text"` node values so that secret scanners can find them.
+/// rather than a plain string. This function walks the content tree and writes
+/// leaf `"type": "text"` node values into a single output buffer so extraction
+/// remains linear in the size of the final text.
 fn extract_adf_text(node: &serde_json::Value) -> String {
-    enum FrameState {
-        Enter,
-        Exit {
-            node_type: Option<String>,
-            child_count: usize,
-        },
+    struct PendingSeparator<'a> {
+        separator: &'a str,
+        previous_ended_whitespace: bool,
     }
 
-    struct Frame<'a> {
-        node: &'a serde_json::Value,
-        state: FrameState,
+    struct TextAccumulator {
+        text: String,
+        last_char_is_whitespace: bool,
     }
 
-    let mut stack = vec![Frame {
-        node,
-        state: FrameState::Enter,
-    }];
-    let mut values: Vec<String> = Vec::new();
+    impl TextAccumulator {
+        fn new() -> Self {
+            Self { text: String::new(), last_char_is_whitespace: true }
+        }
 
-    while let Some(frame) = stack.pop() {
-        match frame.state {
-            FrameState::Enter => match frame.node {
-                serde_json::Value::Object(map) => {
-                    let node_type = map.get("type").and_then(|v| v.as_str());
-                    if node_type == Some("text") {
-                        values.push(
-                            map.get("text")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string(),
-                        );
-                        continue;
-                    }
-                    if node_type == Some("hardBreak") {
-                        values.push("\n".to_string());
-                        continue;
-                    }
+        fn len(&self) -> usize {
+            self.text.len()
+        }
 
-                    let child_count = map
-                        .get("content")
-                        .and_then(|v| v.as_array())
-                        .map(|arr| arr.len())
-                        .unwrap_or(0);
-                    stack.push(Frame {
-                        node: frame.node,
-                        state: FrameState::Exit {
-                            node_type: node_type.map(|value| value.to_string()),
-                            child_count,
-                        },
-                    });
-                    if let Some(arr) = map.get("content").and_then(|v| v.as_array()) {
-                        for child in arr.iter().rev() {
-                            stack.push(Frame {
-                                node: child,
-                                state: FrameState::Enter,
-                            });
+        fn ends_with_newline(&self) -> bool {
+            self.text.ends_with('\n')
+        }
+
+        fn last_char_is_whitespace(&self) -> bool {
+            self.last_char_is_whitespace
+        }
+
+        fn write_text(
+            &mut self,
+            text: &str,
+            pending_separator: &mut Option<PendingSeparator<'_>>,
+        ) -> bool {
+            if text.is_empty() {
+                return false;
+            }
+
+            if let Some(pending_separator) = pending_separator.take() {
+                let starts_non_whitespace =
+                    text.chars().next().map(|ch| !ch.is_whitespace()).unwrap_or(false);
+                if !pending_separator.previous_ended_whitespace && starts_non_whitespace {
+                    self.text.push_str(pending_separator.separator);
+                    if let Some(last_char) = pending_separator.separator.chars().last() {
+                        self.last_char_is_whitespace = last_char.is_whitespace();
+                    }
+                }
+            }
+
+            self.text.push_str(text);
+            if let Some(last_char) = text.chars().last() {
+                self.last_char_is_whitespace = last_char.is_whitespace();
+            }
+            true
+        }
+
+        fn write_char(
+            &mut self,
+            ch: char,
+            pending_separator: &mut Option<PendingSeparator<'_>>,
+        ) -> bool {
+            if let Some(pending_separator) = pending_separator.take() {
+                if !pending_separator.previous_ended_whitespace && !ch.is_whitespace() {
+                    self.text.push_str(pending_separator.separator);
+                    if let Some(last_char) = pending_separator.separator.chars().last() {
+                        self.last_char_is_whitespace = last_char.is_whitespace();
+                    }
+                }
+            }
+
+            self.text.push(ch);
+            self.last_char_is_whitespace = ch.is_whitespace();
+            true
+        }
+    }
+
+    fn write_adf_text(
+        node: &serde_json::Value,
+        output: &mut TextAccumulator,
+        pending_separator: &mut Option<PendingSeparator<'_>>,
+    ) -> bool {
+        match node {
+            serde_json::Value::Object(map) => {
+                let node_type = map.get("type").and_then(|v| v.as_str());
+                if node_type == Some("text") {
+                    return output.write_text(
+                        map.get("text").and_then(|v| v.as_str()).unwrap_or(""),
+                        pending_separator,
+                    );
+                }
+                if node_type == Some("hardBreak") {
+                    return output.write_char('\n', pending_separator);
+                }
+
+                let start_len = output.len();
+                if let Some(children) = map.get("content").and_then(|v| v.as_array()) {
+                    let separator = match node_type {
+                        Some("table") => Some("\n"),
+                        Some("tableRow") => Some(" "),
+                        _ => None,
+                    };
+                    let mut wrote_child_text = false;
+                    let mut previous_ended_whitespace = true;
+                    for child in children {
+                        let mut child_pending_separator = if wrote_child_text {
+                            separator.map(|separator| PendingSeparator {
+                                separator,
+                                previous_ended_whitespace,
+                            })
+                        } else {
+                            pending_separator.take()
+                        };
+                        let child_wrote_text =
+                            write_adf_text(child, output, &mut child_pending_separator);
+                        if !wrote_child_text && !child_wrote_text {
+                            *pending_separator = child_pending_separator;
+                        }
+                        if child_wrote_text {
+                            wrote_child_text = true;
+                            previous_ended_whitespace = output.last_char_is_whitespace();
                         }
                     }
                 }
-                serde_json::Value::Array(arr) => {
-                    let child_count = arr.len();
-                    stack.push(Frame {
-                        node: frame.node,
-                        state: FrameState::Exit {
-                            node_type: None,
-                            child_count,
-                        },
-                    });
-                    for child in arr.iter().rev() {
-                        stack.push(Frame {
-                            node: child,
-                            state: FrameState::Enter,
-                        });
-                    }
-                }
-                _ => values.push(String::new()),
-            },
-            FrameState::Exit {
-                node_type,
-                child_count,
-            } => {
-                let start = values.len().saturating_sub(child_count);
-                let child_texts = values.split_off(start);
-                let mut text = match node_type.as_deref() {
-                    Some("table") => join_texts_with_separator(child_texts, "\n"),
-                    Some("tableRow") => join_texts_with_separator(child_texts, " "),
-                    _ => child_texts.concat(),
-                };
 
                 if matches!(
-                    node_type.as_deref(),
-                    Some("paragraph" | "heading" | "blockquote" | "listItem" | "codeBlock" | "tableRow" | "table")
-                ) && !text.is_empty()
-                    && !text.ends_with('\n')
+                    node_type,
+                    Some(
+                        "paragraph"
+                            | "heading"
+                            | "blockquote"
+                            | "listItem"
+                            | "codeBlock"
+                            | "tableRow"
+                            | "table"
+                    )
+                ) && output.len() > start_len
+                    && !output.ends_with_newline()
                 {
-                    text.push('\n');
+                    output.text.push('\n');
+                    output.last_char_is_whitespace = true;
                 }
 
-                values.push(text);
+                output.len() > start_len
             }
+            serde_json::Value::Array(arr) => {
+                let start_len = output.len();
+                let mut wrote_child_text = false;
+                for child in arr {
+                    let mut child_pending_separator =
+                        if wrote_child_text { None } else { pending_separator.take() };
+                    let child_wrote_text =
+                        write_adf_text(child, output, &mut child_pending_separator);
+                    if !wrote_child_text && !child_wrote_text {
+                        *pending_separator = child_pending_separator;
+                    }
+                    if child_wrote_text {
+                        wrote_child_text = true;
+                    }
+                }
+                output.len() > start_len
+            }
+            _ => false,
         }
     }
 
-    values.pop().unwrap_or_default()
-}
-
-fn join_texts_with_separator(child_texts: Vec<String>, separator: &str) -> String {
-    let mut text = String::new();
-    let mut last_was_whitespace = true;
-    for child_text in child_texts {
-        if child_text.is_empty() {
-            continue;
-        }
-        let child_starts_non_whitespace = child_text
-            .chars()
-            .next()
-            .map(|c| !c.is_whitespace())
-            .unwrap_or(false);
-        let needs_separator = !last_was_whitespace && child_starts_non_whitespace;
-        if needs_separator {
-            text.push_str(separator);
-        }
-        text.push_str(&child_text);
-        if let Some(last_char) = child_text.chars().rev().next() {
-            last_was_whitespace = last_char.is_whitespace();
-        }
-    }
-    text
+    let mut output = TextAccumulator::new();
+    let mut pending_separator = None;
+    write_adf_text(node, &mut output, &mut pending_separator);
+    output.text
 }
 
 /// Returns true if the value looks like an ADF document root.
 fn is_adf(value: &serde_json::Value) -> bool {
-    value
-        .get("type")
-        .and_then(|v| v.as_str())
-        .map(|t| t == "doc")
-        .unwrap_or(false)
+    value.get("type").and_then(|v| v.as_str()).map(|t| t == "doc").unwrap_or(false)
 }
 
 fn flatten_adf_fields(issue_value: &mut serde_json::Value) {
@@ -159,9 +195,8 @@ fn flatten_adf_fields(issue_value: &mut serde_json::Value) {
     if let Some(desc) = issue_value.pointer("/fields/description") {
         if is_adf(desc) {
             let plain_text = extract_adf_text(desc);
-            if let Some(fields) = issue_value
-                .pointer_mut("/fields")
-                .and_then(|value| value.as_object_mut())
+            if let Some(fields) =
+                issue_value.pointer_mut("/fields").and_then(|value| value.as_object_mut())
             {
                 fields.insert(
                     "description".to_string(),
@@ -386,6 +421,24 @@ mod tests {
     }
 
     #[test]
+    fn extract_adf_text_preserves_table_row_whitespace_rules() {
+        let value = json!({
+            "type": "doc",
+            "version": 1,
+            "content": [{
+                "type": "tableRow",
+                "content": [
+                    {"type": "text", "text": "foo"},
+                    {"type": "text", "text": "bar"},
+                    {"type": "text", "text": " baz"}
+                ]
+            }]
+        });
+        let text = extract_adf_text(&value);
+        assert_eq!(text.trim_end(), "foo bar baz");
+    }
+
+    #[test]
     fn flatten_adf_fields_converts_comment_bodies() {
         let mut issue_value = json!({
             "fields": {
@@ -428,10 +481,8 @@ mod tests {
             }
         });
         flatten_adf_fields(&mut issue_value);
-        let desc = issue_value
-            .pointer("/fields/description")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let desc =
+            issue_value.pointer("/fields/description").and_then(|v| v.as_str()).unwrap_or("");
         assert_eq!(desc, "desc");
     }
 
@@ -443,10 +494,8 @@ mod tests {
             }
         });
         flatten_adf_fields(&mut issue_value);
-        let desc = issue_value
-            .pointer("/fields/description")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let desc =
+            issue_value.pointer("/fields/description").and_then(|v| v.as_str()).unwrap_or("");
         assert_eq!(desc, "plain description");
     }
 
