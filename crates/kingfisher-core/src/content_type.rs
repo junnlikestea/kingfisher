@@ -110,7 +110,7 @@ impl ContentInspector {
     #[inline]
     #[must_use]
     pub fn guess_language(&self, path: &Path, content: &[u8]) -> Option<String> {
-        // 1) Extension mapping (fast, no I/O).
+        // 1) Extension mapping (turbo, no I/O).
         if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
             if let Some(lang) = LanguageType::from_file_extension(&ext.to_ascii_lowercase()) {
                 return Some(lang.name().to_string());

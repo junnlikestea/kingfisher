@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.85.0]
+- Report viewer: added `--view-report-port` and `--view-report-address` to `kingfisher scan --view-report`, and `--address` to `kingfisher view`, so the embedded report server can bind to `0.0.0.0` and be reached from the host when running in Docker. Use `--view-report-address 0.0.0.0` with `-p 7890:7890` (or `--view-report-port 7891` with `-p 7891:7891`) to view the HTML report at http://localhost:7890 from your host.
+- Updated `kingfisher scan` to accept Git repository URLs as positional targets (for example `kingfisher scan github.com/org/repo` or `kingfisher scan https://gitlab.com/group/project.git`) without requiring `--git-url`.
+- Deprecated `--git-url` while preserving backward compatibility; using the flag now emits a migration warning to prefer positional URL targets.
+- Updated README/integration/usage/install/demo examples and CLI tests to use positional Git URL scanning syntax.
+- Jira scanning: added `kingfisher scan jira --include-comments` and `--include-changelog` to scan per-issue comments and changelog entries, with paginated Jira comment fetching and ADF text normalization preserved for issue/comment content.
+- Added `--turbo` mode: sets `--commit-metadata=false`, `--no-base64`, disables language detection, and disables tree-sitter parsing...for maximum scan speed. Findings will omit Git commit context (author, date, commit hash) and will not include Base64-decoded secrets.
+- SQLite database scanning: kingfisher now detects and extracts SQLite files (`.db`, `.sqlite`, `.sqlite3`, etc.), dumping each table as SQL text with named columns so secrets stored in database rows are scannable. Extraction is enabled by default and can be disabled with `--no-extract-archives`.
+- Python bytecode (.pyc) scanning: extracts string constants from compiled Python (`.pyc`, `.pyo`) files via marshal parsing so secrets embedded in bytecode are scannable. Extraction is enabled by default and can be disabled with `--no-extract-archives`.
+- Performance: pipelined ODB enumeration — scanning now begins while blob OIDs are still being discovered, overlapping I/O with pattern matching.
+- Performance: skip blobs smaller than 20 bytes during enumeration (too small to contain any secret).
+- Performance: preserve pack-ascending blob order in the metadata path for better I/O locality when Rayon splits work.
+- Performance: defer Git committer metadata materialization until commits actually introduce scannable blobs, reducing unnecessary string/time parsing work.
+- Performance: push `--exclude` filtering into Git tree traversal so excluded paths/subtrees are pruned before blob-introduction bookkeeping.
+- Performance: make Git repository object indexing single-pass (removed the extra ODB scan in `RepositoryIndex::new`).
+
 ## [v1.84.0]
 - Added/updated `pipedrive` and `amplitude` rules
 - Access Map: added Buildkite provider. Enumerates token scopes, user identity, organizations, and pipelines with severity classification based on scope risk.

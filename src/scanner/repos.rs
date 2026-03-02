@@ -661,11 +661,15 @@ pub async fn fetch_jira_issues(
     };
     let output_dir = output_dir.join("jira_issues");
     let _paths = jira::download_issues_to_dir(
-        jira_url,
+        &jira_url,
         jql,
         max_results,
         global_args.ignore_certs,
         &output_dir,
+        jira::DownloadIssueArtifactsOptions {
+            include_comments: args.input_specifier_args.jira_include_comments,
+            include_changelog: args.input_specifier_args.jira_include_changelog,
+        },
     )
     .await?;
     Ok(vec![output_dir])
@@ -863,7 +867,7 @@ pub async fn fetch_s3_objects(
         let blob = crate::blob::Blob::from_bytes(bytes);
 
         if let Some((origin, blob_md, scored_matches)) =
-            processor.run(origin, blob, args.no_dedup, args.redact, args.no_base64)?
+            processor.run(origin, blob, args.no_dedup, args.redact, args.no_base64, args.turbo)?
         {
             // Wrap origin & metadata once:
             let origin_arc = Arc::new(origin);
@@ -945,7 +949,7 @@ pub async fn fetch_gcs_objects(
         let blob = crate::blob::Blob::from_bytes(bytes);
 
         if let Some((origin, blob_md, scored_matches)) =
-            processor.run(origin, blob, args.no_dedup, args.redact, args.no_base64)?
+            processor.run(origin, blob, args.no_dedup, args.redact, args.no_base64, args.turbo)?
         {
             let origin_arc = Arc::new(origin);
             let blob_arc = Arc::new(blob_md);

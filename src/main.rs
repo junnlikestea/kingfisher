@@ -239,7 +239,11 @@ async fn async_main(args: CommandLineArgs) -> Result<()> {
                 Command::Scan(scan_command) => match scan_command.into_operation()? {
                     ScanOperation::Scan(mut scan_args) => {
                         if scan_args.view_report {
-                            view::ensure_port_available(view::DEFAULT_PORT)?;
+                            view::ensure_port_available(
+                                scan_args.view_report_port,
+                                &scan_args.view_report_address,
+                                "--view-report-port",
+                            )?;
                         }
                         let view_scan_started_at = chrono::Local::now();
                         let view_scan_start_time = Instant::now();
@@ -320,7 +324,8 @@ async fn async_main(args: CommandLineArgs) -> Result<()> {
                             let report_bytes = serde_json::to_vec_pretty(&envelope)?;
                             let view_args = view::ViewArgs {
                                 report: None,
-                                port: view::DEFAULT_PORT,
+                                port: scan_args.view_report_port,
+                                address: scan_args.view_report_address.clone(),
                                 open_browser: true,
                                 report_bytes: Some(report_bytes),
                             };
@@ -521,6 +526,8 @@ fn create_default_scan_args() -> cli::commands::scan::ScanArgs {
 
             jira_url: None,
             jql: None,
+            jira_include_comments: false,
+            jira_include_changelog: false,
             confluence_url: None,
             cql: None,
             max_results: 100,
@@ -577,8 +584,11 @@ fn create_default_scan_args() -> cli::commands::scan::ScanArgs {
         skip_aws_account_file: None,
         output_args: OutputArgs { output: None, format: ReportOutputFormat::Pretty },
         no_base64: false,
+        turbo: false,
         no_inline_ignore: false,
         no_ignore_if_contains: false,
+        view_report_port: view::DEFAULT_PORT,
+        view_report_address: view::DEFAULT_ADDRESS.to_string(),
         validation_timeout: 10,
         validation_retries: 1,
         validation_rps: None,

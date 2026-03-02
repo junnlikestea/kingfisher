@@ -140,6 +140,8 @@ mod tests {
                 // Jira options
                 jira_url: None,
                 jql: None,
+                jira_include_comments: false,
+                jira_include_changelog: false,
                 // Confluence options
                 confluence_url: None,
                 cql: None,
@@ -193,8 +195,11 @@ mod tests {
             skip_aws_account: Vec::new(),
             skip_aws_account_file: None,
             no_base64: false,
+            turbo: false,
             no_inline_ignore: false,
             no_ignore_if_contains: false,
+            view_report_port: 7890,
+            view_report_address: "127.0.0.1".to_string(),
             validation_timeout: 10,
             validation_retries: 1,
             validation_rps: None,

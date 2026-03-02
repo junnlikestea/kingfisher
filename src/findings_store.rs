@@ -262,7 +262,7 @@ impl FindingsStore {
     //                 Origin::Extended(_) => "ext",
     //             };
 
-    //             // 64-bit key (fast, cheap, good dispersion)
+    //             // 64-bit key (turbo, cheap, good dispersion)
     //             let key = xxh3_64(
     //                 format!(
     //                     "{}|{}|{}",

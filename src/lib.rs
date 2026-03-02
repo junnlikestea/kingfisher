@@ -40,6 +40,7 @@ pub mod location;
 pub mod matcher;
 pub mod origin;
 pub mod parser;
+pub mod pyc;
 pub mod reporter;
 pub mod rule_loader;
 pub mod rule_profiling;
@@ -51,6 +52,7 @@ pub mod scanner;
 pub mod scanner_pool;
 pub mod slack;
 pub mod snippet;
+pub mod sqlite;
 pub mod update;
 pub mod util;
 pub mod validation;
@@ -61,7 +63,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Result};
 use crossbeam_channel::Sender;
-pub use git_repo_enumerator::{GitRepoEnumerator, GitRepoResult, GitRepoWithMetadataEnumerator};
+pub use git_repo_enumerator::{
+    GitBlobSource, GitRepoEnumerator, GitRepoResult, GitRepoWithMetadataEnumerator,
+};
 pub use gix::{self, Repository, ThreadSafeRepository};
 use gix::{open::Options, open_opts};
 use globset::{Glob, GlobSet, GlobSetBuilder};

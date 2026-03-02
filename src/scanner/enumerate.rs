@@ -30,18 +30,20 @@ use crate::{
     decompress::{decompress_file_to_temp, CompressedContent},
     findings_store,
     git_commit_metadata::CommitMetadata,
-    git_repo_enumerator::GitBlobMetadata,
+    git_repo_enumerator::{GitBlobMetadata, GitBlobSource, MIN_SCANNABLE_BLOB_SIZE},
     matcher::{Matcher, MatcherStats},
     open_git_repo_with_options,
     origin::{Origin, OriginSet},
+    pyc::extract_pyc_strings,
     rule_profiling::ConcurrentRuleProfiler,
     rules_database::RulesDatabase,
     scanner::{
         processing::BlobProcessor,
         runner::{create_datastore_channel, spawn_datastore_writer_thread},
-        util::is_compressed_file,
+        util::{is_compressed_file, is_pyc_file, is_sqlite_file},
     },
     scanner_pool::ScannerPool,
+    sqlite::extract_sqlite_contents,
     DirectoryResult, EnumeratorConfig, EnumeratorFileResult, FileResult, FilesystemEnumerator,
     FoundInput, GitDiffConfig, GitRepoEnumerator, GitRepoResult, GitRepoWithMetadataEnumerator,
     PathBuf,
@@ -236,7 +238,14 @@ pub fn enumerate_filesystem_inputs(
                     return Ok(());
                 }
                 progress.inc(blob.len().try_into().unwrap());
-                match processor.run(origin, blob, args.no_dedup, args.redact, args.no_base64) {
+                match processor.run(
+                    origin,
+                    blob,
+                    args.no_dedup,
+                    args.redact,
+                    args.no_base64,
+                    args.turbo,
+                ) {
                     Ok(None) => {
                         // nothing to record
                     }
@@ -335,7 +344,51 @@ impl ParallelBlobIterator for FileResult {
         let extraction_enabled = self.extract_archives;
         let max_extraction_depth = self.extraction_depth;
 
-        if extraction_enabled && is_compressed_file(&self.path) {
+        if extraction_enabled && is_sqlite_file(&self.path) {
+            match extract_sqlite_contents(&self.path) {
+                Ok(tables) if tables.is_empty() => {
+                    debug!("No tables found in SQLite database: {}", self.path.display());
+                    self.raw_blob_iter().map(Some)
+                }
+                Ok(tables) => {
+                    let items = tables
+                        .into_iter()
+                        .map(|(logical_name, data)| {
+                            let full_path = self.path.join(logical_name);
+                            let origin = OriginSet::new(Origin::from_file(full_path), vec![]);
+                            (origin, Blob::from_bytes(data))
+                        })
+                        .collect();
+                    Ok(Some(FileResultIter {
+                        iter_kind: FileResultIterKind::Archive(items),
+                        _marker: PhantomData,
+                    }))
+                }
+                Err(e) => {
+                    debug!("Failed to extract SQLite database {}: {e:#}", self.path.display());
+                    self.raw_blob_iter().map(Some)
+                }
+            }
+        } else if extraction_enabled && is_pyc_file(&self.path) {
+            match extract_pyc_strings(&self.path) {
+                Ok(strings) if strings.is_empty() => {
+                    debug!("No strings found in .pyc file: {}", self.path.display());
+                    self.raw_blob_iter().map(Some)
+                }
+                Ok(strings) => {
+                    let origin = OriginSet::new(Origin::from_file(self.path.clone()), vec![]);
+                    let blob = Blob::from_bytes(strings);
+                    Ok(Some(FileResultIter {
+                        iter_kind: FileResultIterKind::Single(Some((origin, blob))),
+                        _marker: PhantomData,
+                    }))
+                }
+                Err(e) => {
+                    debug!("Failed to extract .pyc file {}: {e:#}", self.path.display());
+                    self.raw_blob_iter().map(Some)
+                }
+            }
+        } else if extraction_enabled && is_compressed_file(&self.path) {
             match decompress_file_to_temp(&self.path) {
                 Ok((content, _temp_dir)) => match content {
                     // Single-file decompression fully in memory.
@@ -452,6 +505,18 @@ impl ParallelBlobIterator for FileResult {
     }
 }
 
+impl FileResult {
+    fn raw_blob_iter(&self) -> Result<FileResultIter<'static>> {
+        let blob = Blob::from_file(&self.path)
+            .with_context(|| format!("Failed to load blob from {}", self.path.display()))?;
+        let origin = OriginSet::new(Origin::from_file(self.path.clone()), vec![]);
+        Ok(FileResultIter {
+            iter_kind: FileResultIterKind::Single(Some((origin, blob))),
+            _marker: PhantomData,
+        })
+    }
+}
+
 // A marker so the struct itself carries the lifetime.
 struct GitRepoResultIter<'a> {
     inner: GitRepoResult,
@@ -482,52 +547,103 @@ impl<'a> rayon::iter::ParallelIterator for GitRepoResultIter<'a> {
         C: rayon::iter::plumbing::UnindexedConsumer<Self::Item>,
     {
         // ── shared state ──────────────────────────────────────────────
-        let repo_sync = self.inner.repository.into_sync();
+        let repo_sync = Arc::new(self.inner.repository.into_sync());
         let repo_path = Arc::new(self.inner.path.clone());
         let deadline = self.deadline;
         let flag = Arc::new(AtomicBool::new(false)); // first-timeout gate
 
-        self.inner
-            .blobs
-            .into_par_iter()
-            .with_min_len(1024)
-            .map_init(|| repo_sync.to_thread_local(), {
-                let repo_path = Arc::clone(&repo_path);
-                let flag = Arc::clone(&flag);
+        let load_blob = {
+            let repo_path = Arc::clone(&repo_path);
+            let flag = Arc::clone(&flag);
 
-                move |repo: &mut GixRepo, md| -> Result<(OriginSet, Blob)> {
-                    // ── 10-minute guard ──────────────────────────
-                    if StdInstant::now() > deadline {
-                        if flag.swap(true, Ordering::Relaxed) {
-                            bail!("__timeout_silenced__");
-                        }
-                        bail!("blob-read timeout (repo: {})", repo_path.display());
+            move |repo: &mut GixRepo, md: GitBlobMetadata| -> Result<(OriginSet, Blob)> {
+                if StdInstant::now() > deadline {
+                    if flag.swap(true, Ordering::Relaxed) {
+                        bail!("__timeout_silenced__");
                     }
-
-                    // ── load blob ────────────────────────────────
-                    let blob_id = md.blob_oid;
-                    let mut raw = repo.find_object(blob_id)?.try_into_blob()?;
-                    let blob = Blob::new(BlobId::from(&blob_id), std::mem::take(&mut raw.data));
-
-                    // ── build Origin — CLONE Arc & PathBuf ──────
-                    let origin = OriginSet::try_from_iter(md.first_seen.iter().map(|e| {
-                        Origin::from_git_repo_with_first_commit(
-                            Arc::clone(&repo_path),
-                            Arc::clone(&e.commit_metadata),
-                            String::from_utf8_lossy(&e.path).to_string(),
-                        )
-                    }))
-                    .unwrap_or_else(|| Origin::from_git_repo(Arc::clone(&repo_path)).into());
-
-                    Ok((origin, blob))
+                    bail!("blob-read timeout (repo: {})", repo_path.display());
                 }
-            })
-            .filter(|res| {
-                !matches!(res,
-                    Err(e) if e.to_string() == "__timeout_silenced__"
-                )
-            })
-            .drive_unindexed(consumer)
+
+                let blob_id = md.blob_oid;
+                let mut raw = repo.find_object(blob_id)?.try_into_blob()?;
+                let blob = Blob::new(BlobId::from(&blob_id), std::mem::take(&mut raw.data));
+
+                let origin = OriginSet::try_from_iter(md.first_seen.iter().map(|e| {
+                    Origin::from_git_repo_with_first_commit(
+                        Arc::clone(&repo_path),
+                        Arc::clone(&e.commit_metadata),
+                        String::from_utf8_lossy(&e.path).to_string(),
+                    )
+                }))
+                .unwrap_or_else(|| Origin::from_git_repo(Arc::clone(&repo_path)).into());
+
+                Ok((origin, blob))
+            }
+        };
+
+        let timeout_filter = |res: &Result<(OriginSet, Blob)>| -> bool {
+            !matches!(res, Err(e) if e.to_string() == "__timeout_silenced__")
+        };
+
+        match self.inner.blobs {
+            GitBlobSource::Precomputed(blobs) => {
+                let rs = Arc::clone(&repo_sync);
+                blobs
+                    .into_par_iter()
+                    .with_min_len(1024)
+                    .map_init(move || rs.to_thread_local(), load_blob)
+                    .filter(timeout_filter)
+                    .drive_unindexed(consumer)
+            }
+            GitBlobSource::StreamFromOdb => {
+                let (blob_tx, blob_rx) = crossbeam_channel::bounded(8192);
+                let enum_repo_sync = Arc::clone(&repo_sync);
+
+                std::thread::Builder::new()
+                    .name("odb_enumerator".to_string())
+                    .spawn(move || {
+                        use gix::{
+                            object::Kind, odb::store::iter::Ordering as OdbOrdering, prelude::*,
+                        };
+                        let repo = enum_repo_sync.to_thread_local();
+                        let odb = &repo.objects;
+                        let iter = match odb.iter() {
+                            Ok(i) => i,
+                            Err(_) => return,
+                        };
+                        for oid_result in iter
+                            .with_ordering(OdbOrdering::PackAscendingOffsetThenLooseLexicographical)
+                        {
+                            let oid = match oid_result {
+                                Ok(oid) => oid,
+                                Err(_) => continue,
+                            };
+                            let hdr = match odb.header(oid) {
+                                Ok(hdr) => hdr,
+                                Err(_) => continue,
+                            };
+                            if hdr.kind() == Kind::Blob && hdr.size() >= MIN_SCANNABLE_BLOB_SIZE {
+                                let md = GitBlobMetadata {
+                                    blob_oid: oid,
+                                    first_seen: Default::default(),
+                                };
+                                if blob_tx.send(md).is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                    })
+                    .expect("failed to spawn ODB enumerator thread");
+
+                let rs = Arc::clone(&repo_sync);
+                blob_rx
+                    .into_iter()
+                    .par_bridge()
+                    .map_init(move || rs.to_thread_local(), load_blob)
+                    .filter(timeout_filter)
+                    .drive_unindexed(consumer)
+            }
+        }
     }
 }
 
@@ -912,7 +1028,11 @@ fn enumerate_git_diff_repo(
         blobs
     };
 
-    Ok(GitRepoResult { repository, path: path.to_owned(), blobs })
+    Ok(GitRepoResult {
+        repository,
+        path: path.to_owned(),
+        blobs: GitBlobSource::Precomputed(blobs),
+    })
 }
 
 fn synthesize_staged_commit(path: &Path, parent_ref: &str) -> Result<String> {
@@ -1052,14 +1172,17 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    use super::{enumerate_git_diff_repo, GitDiffConfig};
+    use super::{
+        enumerate_git_diff_repo, reference_candidates, FileResult, GitBlobSource, GitDiffConfig,
+        ParallelBlobIterator,
+    };
     use anyhow::Result;
     use bstr::ByteSlice;
     use git2::{Repository as Git2Repository, Signature};
     use gix::{open::Options, open_opts};
+    use rayon::iter::ParallelIterator;
+    use rusqlite::Connection;
     use tempfile::tempdir;
-
-    use super::reference_candidates;
 
     #[test]
     fn reference_candidates_for_plain_branch() {
@@ -1146,12 +1269,92 @@ mod tests {
             false,
         )?;
 
-        assert_eq!(result.blobs.len(), 1, "expected the full branch tree to be enumerated");
-        let blob = &result.blobs[0];
+        let blobs = match result.blobs {
+            GitBlobSource::Precomputed(b) => b,
+            GitBlobSource::StreamFromOdb => panic!("expected Precomputed blobs from diff path"),
+        };
+        assert_eq!(blobs.len(), 1, "expected the full branch tree to be enumerated");
+        let blob = &blobs[0];
         assert_eq!(blob.first_seen.len(), 1);
         let appearance_path = blob.first_seen[0].path.to_str_lossy();
         assert_eq!(appearance_path, "secret.txt");
 
+        Ok(())
+    }
+
+    fn collect_file_bytes(file: FileResult) -> Result<Vec<(std::path::PathBuf, Vec<u8>)>> {
+        let iter = file.into_blob_iter()?.expect("file result should yield a blob");
+        iter.collect::<Vec<_>>()
+            .into_iter()
+            .map(|item| {
+                let (origin, blob) = item?;
+                let path = origin
+                    .first()
+                    .full_path()
+                    .expect("file origin should preserve the filesystem path");
+                Ok((path, blob.bytes().to_vec()))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn sqlite_extension_falls_back_to_raw_bytes_when_extraction_fails() -> Result<()> {
+        let dir = tempdir()?;
+        let path = dir.path().join("not-a-database.db");
+        let expected = b"ghp_not_really_sqlite_but_should_still_scan".to_vec();
+        fs::write(&path, &expected)?;
+
+        let blobs = collect_file_bytes(FileResult {
+            path: path.clone(),
+            num_bytes: expected.len() as u64,
+            extract_archives: true,
+            extraction_depth: 2,
+        })?;
+
+        assert_eq!(blobs.len(), 1);
+        assert_eq!(blobs[0].0, path);
+        assert_eq!(blobs[0].1, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn pyc_without_extractable_strings_falls_back_to_raw_bytes() -> Result<()> {
+        let dir = tempdir()?;
+        let path = dir.path().join("empty.pyc");
+        let mut expected = vec![0x55, 0x0D, b'\r', b'\n'];
+        expected.extend_from_slice(&[0; 12]);
+        fs::write(&path, &expected)?;
+
+        let blobs = collect_file_bytes(FileResult {
+            path: path.clone(),
+            num_bytes: expected.len() as u64,
+            extract_archives: true,
+            extraction_depth: 2,
+        })?;
+
+        assert_eq!(blobs.len(), 1);
+        assert_eq!(blobs[0].0, path);
+        assert_eq!(blobs[0].1, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn sqlite_with_no_user_tables_falls_back_to_raw_bytes() -> Result<()> {
+        let dir = tempdir()?;
+        let path = dir.path().join("empty.db");
+        Connection::open(&path)?;
+        let expected = fs::read(&path)?;
+
+        let blobs = collect_file_bytes(FileResult {
+            path: path.clone(),
+            num_bytes: expected.len() as u64,
+            extract_archives: true,
+            extraction_depth: 2,
+        })?;
+
+        assert_eq!(blobs.len(), 1);
+        assert_eq!(blobs[0].0, path);
+        assert_eq!(blobs[0].1, expected);
         Ok(())
     }
 }

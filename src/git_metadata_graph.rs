@@ -1,7 +1,7 @@
 use std::{collections::BinaryHeap, time::Instant};
 
 use anyhow::{bail, Context, Result};
-use bstr::BString;
+use bstr::{BString, ByteSlice};
 use fixedbitset::FixedBitSet;
 use gix::{
     hashtable::{hash_map, HashMap},
@@ -10,6 +10,9 @@ use gix::{
     prelude::*,
     ObjectId, OdbHandle,
 };
+use globset::GlobSet;
+
+use crate::git_repo_enumerator::MIN_SCANNABLE_BLOB_SIZE;
 use petgraph::{
     graph::{DiGraph, EdgeIndex, IndexType, NodeIndex},
     prelude::*,
@@ -135,42 +138,11 @@ pub(crate) struct RepositoryIndex {
 impl RepositoryIndex {
     pub(crate) fn new(odb: &OdbHandle) -> Result<Self> {
         use gix::{odb::store::iter::Ordering, prelude::*};
-        let mut num_tags = 0;
-        let mut num_trees = 0;
-        let mut num_blobs = 0;
-        let mut num_commits = 0;
+        let mut trees = ObjectIdBimap::with_capacity(0);
+        let mut commits = ObjectIdBimap::with_capacity(0);
+        let mut blobs = ObjectIdBimap::with_capacity(0);
+        let mut tags = ObjectIdBimap::with_capacity(0);
 
-        for oid_result in odb
-            .iter()
-            .context("Failed to iterate object database")?
-            .with_ordering(Ordering::PackLexicographicalThenLooseLexicographical)
-        {
-            let oid = match oid_result {
-                Ok(oid) => oid,
-                Err(e) => {
-                    debug!("Failed to read object id: {e}");
-                    continue;
-                }
-            };
-            let hdr = match odb.header(oid) {
-                Ok(hdr) => hdr,
-                Err(e) => {
-                    debug!("Failed to read object header for {oid}: {e}");
-                    continue;
-                }
-            };
-            match hdr.kind() {
-                Kind::Tree => num_trees += 1,
-                Kind::Blob => num_blobs += 1,
-                Kind::Commit => num_commits += 1,
-                Kind::Tag => num_tags += 1,
-            }
-        }
-
-        let mut trees = ObjectIdBimap::with_capacity(num_trees);
-        let mut commits = ObjectIdBimap::with_capacity(num_commits);
-        let mut blobs = ObjectIdBimap::with_capacity(num_blobs);
-        let mut tags = ObjectIdBimap::with_capacity(num_tags);
         for oid_result in odb
             .iter()
             .context("Failed to iterate object database")?
@@ -192,11 +164,13 @@ impl RepositoryIndex {
             };
             match hdr.kind() {
                 Kind::Tree => trees.insert(oid),
-                Kind::Blob => blobs.insert(oid),
+                Kind::Blob if hdr.size() >= MIN_SCANNABLE_BLOB_SIZE => blobs.insert(oid),
+                Kind::Blob => {}
                 Kind::Commit => commits.insert(oid),
                 Kind::Tag => tags.insert(oid),
             }
         }
+
         Ok(Self { trees, commits, blobs, tags })
     }
     pub(crate) fn num_commits(&self) -> usize {
@@ -289,6 +263,7 @@ impl GitMetadataGraph {
         self,
         repo_index: &RepositoryIndex,
         repo: &gix::Repository,
+        exclude_globset: Option<&GlobSet>,
     ) -> Result<Vec<CommitBlobMetadata>> {
         let _span =
             error_span!("get_repo_metadata", path = repo.path().display().to_string()).entered();
@@ -336,6 +311,7 @@ impl GitMetadataGraph {
                     visit_tree(
                         repo,
                         &mut symbols,
+                        exclude_globset,
                         repo_index,
                         &mut num_trees_introduced,
                         &mut num_blobs_introduced,
@@ -405,10 +381,51 @@ impl GitMetadataGraph {
     }
 }
 
+#[inline]
+fn path_is_excluded(path: &BString, exclude_globset: Option<&GlobSet>) -> bool {
+    let Some(gs) = exclude_globset else {
+        return false;
+    };
+    match path.to_path() {
+        Ok(p) => gs.is_match(p),
+        Err(_) => false,
+    }
+}
+
+#[inline]
+fn tree_path_is_excluded(path: &BString, exclude_globset: Option<&GlobSet>) -> bool {
+    if path_is_excluded(path, exclude_globset) {
+        return true;
+    }
+    let Some(gs) = exclude_globset else {
+        return false;
+    };
+    let mut dir_path = path.clone();
+    dir_path.push(b'/');
+    match dir_path.to_path() {
+        Ok(p) => gs.is_match(p),
+        Err(_) => false,
+    }
+}
+
+#[inline]
+fn render_symbol_path(symbols: &BStringTable, path: &[Symbol]) -> BString {
+    let mut buf = Vec::new();
+    if let Some(first) = path.first() {
+        buf.extend_from_slice(symbols.resolve(*first));
+        for s in &path[1..] {
+            buf.push(b'/');
+            buf.extend_from_slice(symbols.resolve(*s));
+        }
+    }
+    BString::from(buf)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn visit_tree(
     repo: &gix::Repository,
     symbols: &mut BStringTable,
+    exclude_globset: Option<&GlobSet>,
     repo_index: &RepositoryIndex,
     num_trees_introduced: &mut usize,
     num_blobs_introduced: &mut usize,
@@ -443,9 +460,15 @@ fn visit_tree(
                         debug!("No index for {} in tree {tree_oid}", child.oid);
                         continue;
                     };
+                    let mut new_path = name_path.clone();
+                    new_path.push(symbols.get_or_intern(child.filename.into()));
+                    if exclude_globset.is_some() {
+                        let path = render_symbol_path(symbols, &new_path);
+                        if tree_path_is_excluded(&path, exclude_globset) {
+                            continue;
+                        }
+                    }
                     if seen.insert_tree(child_idx)? {
-                        let mut new_path = name_path.clone();
-                        new_path.push(symbols.get_or_intern(child.filename.into()));
                         tree_worklist.push((new_path, child.oid.to_owned()));
                     }
                 }
@@ -455,19 +478,15 @@ fn visit_tree(
                         continue;
                     };
                     if !seen.contains_blob(child_idx)? {
-                        blobs_encountered.push(child_idx);
-                        *num_blobs_introduced += 1;
                         let mut new_path = name_path.clone();
                         new_path.push(symbols.get_or_intern(child.filename.into()));
-                        let mut buf = Vec::new();
-                        if let Some(first) = new_path.first() {
-                            buf.extend_from_slice(symbols.resolve(*first));
-                            for s in &new_path[1..] {
-                                buf.push(b'/');
-                                buf.extend_from_slice(symbols.resolve(*s));
-                            }
+                        let path = render_symbol_path(symbols, &new_path);
+                        if path_is_excluded(&path, exclude_globset) {
+                            continue;
                         }
-                        introduced.push((child.oid.to_owned(), BString::from(buf)));
+                        blobs_encountered.push(child_idx);
+                        *num_blobs_introduced += 1;
+                        introduced.push((child.oid.to_owned(), path));
                     }
                 }
             }
@@ -477,4 +496,88 @@ fn visit_tree(
         seen.insert_blob(idx)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, path::Path, sync::Arc};
+
+    use anyhow::{bail, Result};
+    use bstr::ByteSlice;
+    use git2::{Repository as Git2Repository, Signature};
+    use gix::{open::Options, open_opts};
+    use globset::GlobSetBuilder;
+    use tempfile::tempdir;
+
+    use crate::git_repo_enumerator::{GitBlobSource, GitRepoWithMetadataEnumerator};
+
+    #[test]
+    fn excluded_blob_path_does_not_hide_later_included_blob() -> Result<()> {
+        let temp = tempdir()?;
+        let repo_path = temp.path().join("repo");
+        let repo = Git2Repository::init(&repo_path)?;
+        let signature = Signature::now("tester", "tester@example.com")?;
+        let shared_contents = b"shared-secret-content-that-is-long-enough";
+
+        let excluded_dir = repo_path.join("excluded");
+        fs::create_dir_all(&excluded_dir)?;
+        fs::write(excluded_dir.join("secret.txt"), shared_contents)?;
+
+        let mut index = repo.index()?;
+        index.add_path(Path::new("excluded/secret.txt"))?;
+        let tree_id = index.write_tree()?;
+        let tree = repo.find_tree(tree_id)?;
+        let first_commit =
+            repo.commit(Some("HEAD"), &signature, &signature, "excluded only", &tree, &[])?;
+        let first_commit = repo.find_commit(first_commit)?;
+
+        fs::remove_file(excluded_dir.join("secret.txt"))?;
+        let visible_path = repo_path.join("visible.txt");
+        fs::write(&visible_path, shared_contents)?;
+
+        let mut index = repo.index()?;
+        index.remove_path(Path::new("excluded/secret.txt"))?;
+        index.add_path(Path::new("visible.txt"))?;
+        let tree_id = index.write_tree()?;
+        let tree = repo.find_tree(tree_id)?;
+        repo.commit(Some("HEAD"), &signature, &signature, "visible path", &tree, &[&first_commit])?;
+
+        let git_dir = repo_path.join(".git");
+        let gix_repo = open_opts(&git_dir, Options::isolated().open_path_as_is(true))?;
+
+        let mut builder = GlobSetBuilder::new();
+        builder.add(globset::Glob::new("excluded/**")?);
+        let exclude_globset = Arc::new(builder.build()?);
+
+        let result = GitRepoWithMetadataEnumerator::new(
+            &repo_path,
+            gix_repo,
+            Some(Arc::clone(&exclude_globset)),
+        )
+        .run()?;
+
+        let blobs = match result.blobs {
+            GitBlobSource::Precomputed(blobs) => blobs,
+            GitBlobSource::StreamFromOdb => {
+                bail!("expected precomputed metadata blobs from metadata enumerator")
+            }
+        };
+
+        let matching: Vec<_> = blobs
+            .into_iter()
+            .filter(|blob| {
+                blob.first_seen
+                    .iter()
+                    .any(|appearance| appearance.path.to_str_lossy() == "visible.txt")
+            })
+            .collect();
+
+        assert_eq!(matching.len(), 1);
+        assert!(matching[0]
+            .first_seen
+            .iter()
+            .all(|appearance| appearance.path.to_str_lossy() != "excluded/secret.txt"));
+
+        Ok(())
+    }
 }

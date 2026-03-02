@@ -1,21 +1,31 @@
-# Kingfisher
+# Kingfisher: Open Source Secret Scanner with Live Validation
 
 <p align="center">
   <img src="docs/kingfisher_logo.png" alt="Kingfisher Logo" width="126" height="173" style="vertical-align: right;" />
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)<br>
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Detection Rules](https://img.shields.io/badge/Detection%20Rules-476-2ea043.svg)](https://github.com/mongodb/kingfisher)<br>
 [![ghcr downloads](https://ghcr-badge.elias.eu.org/shield/mongodb/kingfisher/kingfisher)](https://github.com/mongodb/kingfisher/pkgs/container/kingfisher)<br>
 
 
-Kingfisher is a blazingly fast secret-scanning and **live validation** tool built in Rust.
+Kingfisher is an open source secret scanner and **live secret validation** tool built in Rust.
 
-It combines Intel's SIMD-accelerated regex engine (Hyperscan) with language-aware parsing to achieve high accuracy at massive scale, and **ships with hundreds of built-in rules** to detect, **validate**, and triage secrets before they ever reach production.  
+It combines Intel's SIMD-accelerated regex engine (Hyperscan) with language-aware parsing to achieve high accuracy at massive scale, and **ships with hundreds of built-in rules** to detect, **validate**, and triage leaked API keys, tokens, and credentials before they ever reach production.
 
-Designed for offensive security engineers and blue-teamers alike, Kingfisher helps you pivot across repo ecosystems, validate exposure paths, and hunt for developer-owned leaks that spill beyond the primary codebase.
+Designed for offensive security engineers and blue-team defenders alike, Kingfisher helps you scan repositories, cloud storage, chat, docs, and CI pipelines to find and verify exposed secrets quickly.
 
 </p>
 
 **Learn more:** [Introducing Kingfisher: Real‑Time Secret Detection and Validation](https://www.mongodb.com/blog/post/product-release-announcements/introducing-kingfisher-real-time-secret-detection-validation)
+
+## What Is Kingfisher?
+
+Kingfisher is a high-performance, open source secret detection tool for source code and developer platforms. If you are searching for a "GitHub secret scanner," "API key scanner," "token leak detection," or "Git secrets scanner," this project is built for that workflow.
+
+- Scan code, Git history, and integrated platforms (GitHub, GitLab, Azure Repos, Bitbucket, Gitea, Hugging Face, Jira, Confluence, Slack, Docker, AWS S3, and Google Cloud Storage)
+- Validate discovered credentials against provider APIs to reduce false positives
+- Revoke supported secrets directly from the CLI
+- Generate JSON, SARIF, and HTML outputs for security teams, compliance, and CI
 
 ## Key Features
 
@@ -39,6 +49,8 @@ Designed for offensive security engineers and blue-teamers alike, Kingfisher hel
 - **Blast Radius Mapping**: instantly map leaked keys to their effective cloud identities and exposed resources with `--access-map`. Supports AWS, GCP, Azure, GitHub, Gitlab, and more token support coming.
 - **Broad AI SaaS coverage**: finds and validates tokens for OpenAI, Anthropic, Google Gemini, Cohere, AWS Bedrock, Voyage AI, Mistral, Stability AI, Replicate, xAI (Grok), Ollama, Langchain, Perplexity, Weights & Biases, Cerebras, Friendli, Fireworks.ai, NVIDIA NIM, Together.ai, Zhipu, and many more
 - **Compressed Files**: Supports extracting and scanning compressed files for secrets
+- **SQLite Database Scanning**: Automatically extracts and scans SQLite database contents for secrets stored in table rows
+- **Python Bytecode (.pyc) Scanning**: Extracts and scans string constants from compiled Python (`.pyc`, `.pyo`) files
 - **Baseline management**: generate and track baselines to suppress known secrets ([docs/BASELINE.md](/docs/BASELINE.md))
 - **Checksum-aware detection**: verifies tokens with built-in checksums (e.g., GitHub, Confluent, Zuplo) — no API calls required
 - **Built-in Report Viewer**: Visualize and triage findings locally with `kingfisher view ./report-file.json`
@@ -58,12 +70,12 @@ See ([docs/COMPARISON.md](docs/COMPARISON.md))
 kingfisher scan /path/to/scan --view-report
 ```
 NOTE: Replay has been slowed down for demo
-![alt text](docs/kingfisher-usage-01.gif)
+![Kingfisher secret scanning demo](docs/kingfisher-usage-01.gif)
 
 ## Report Viewer Demo
 Explore Kingfisher's built-in report viewer and its `--access-map`, which can show what the token (AWS, GCP, Azure, GitHub, GitLab, and Slack...more coming) can actually access.
 
-Note: when you pass `--view-report`, Kingfisher starts a **localhost-only** web server on port `7890` and opens it in your default browser. You'll see this near the end of the scan output, and **Kingfisher will keep running** until you stop it.
+Note: when you pass `--view-report`, Kingfisher starts a web server on port `7890` (default) and opens it in your default browser. By default it binds to `127.0.0.1` for security. You'll see this near the end of the scan output, and **Kingfisher will keep running** until you stop it.
 
 ```bash
 INFO kingfisher::cli::commands::view: Starting access-map viewer address=127.0.0.1:7890
@@ -75,13 +87,14 @@ Serving access-map viewer at http://127.0.0.1:7890 (Ctrl+C to stop)
 kingfisher scan /path/to/scan --access-map --view-report
 ```
 
-![alt text](docs/kingfisher-usage-access-map-01.gif)
+![Kingfisher access map and report viewer demo](docs/kingfisher-usage-access-map-01.gif)
 
 **Click to view video**
 [![Demo](docs/demos/findings-thumbnail.png)](https://github.com/user-attachments/assets/d33ee7a6-c60a-4e42-88e0-ac03cb429a46)
 
 # Table of Contents
 
+- [What Is Kingfisher?](#what-is-kingfisher)
 - [Key Features](#key-features)
 - [Compliance and Audit-Ready Scans](#compliance-and-audit-ready-scans)
 - [Benchmark Results](#benchmark-results)
@@ -211,6 +224,8 @@ kingfisher scan docker ghcr.io/org/image:latest
 KF_JIRA_TOKEN="token" kingfisher scan jira --url https://jira.company.com --jql "project = SEC"
 ```
 
+Add `--include-comments` and/or `--include-changelog` to expand the scan beyond the issue body.
+
 ### 16: Scan Confluence pages
 
 ```bash
@@ -229,13 +244,44 @@ KF_SLACK_TOKEN="xoxp-..." kingfisher scan slack "api_key OR password"
 docker run --rm -v "$PWD":/src ghcr.io/mongodb/kingfisher:latest scan /src
 ```
 
-### 19: Output JSON results
+### 19: Run with Docker and view report in browser
+
+To run a scan in Docker and view the HTML report on your host machine, use `--view-report-address 0.0.0.0` so the server is reachable from outside the container, and map the port with `-p`:
+
+```bash
+docker run --rm \
+  -v "$PWD":/src \
+  -p 7890:7890 \
+  ghcr.io/mongodb/kingfisher:latest \
+  scan https://github.com/leaktk/fake-leaks \
+  --access-map \
+  --view-report \
+  --view-report-address 0.0.0.0
+```
+
+Then open **http://localhost:7890** in your browser. If port 7890 is already in use, use `--view-report-port` and map accordingly:
+
+```bash
+docker run --rm \
+  -v "$PWD":/src \
+  -p 7891:7891 \
+  ghcr.io/mongodb/kingfisher:latest \
+  scan https://github.com/leaktk/fake-leaks \
+  --access-map \
+  --view-report \
+  --view-report-port 7891 \
+  --view-report-address 0.0.0.0
+```
+
+Then open **http://localhost:7891**.
+
+### 20: Output JSON results
 
 ```bash
 kingfisher scan /path/to/code --format json --output findings.json
 ```
 
-### 20: Map blast radius of discovered credentials
+### 21: Map blast radius of discovered credentials
 
 ```bash
 kingfisher scan /path/to/code --access-map --view-report
@@ -309,6 +355,11 @@ kingfisher scan /path/to/code
 
 # Scan without validation
 kingfisher scan ~/src/myrepo --no-validate
+
+# Turbo mode: run as fast as possible by disabling Git commit metadata, Base64 decoding,
+# MIME sniffing, language detection, and tree-sitter parsing
+# (findings omit commit context, Base64-only matches, MIME type, and language metadata)
+kingfisher scan ~/src/myrepo --turbo
 
 # Display only secrets confirmed active by third‑party APIs
 kingfisher scan /path/to/repo --only-valid
@@ -392,6 +443,11 @@ cat /path/to/file.py | kingfisher scan -
 # Limit maximum file size scanned (default: 256 MB)
 kingfisher scan /some/file --max-file-size 500
 
+# Turbo mode: equivalent to --commit-metadata=false --no-base64 and disables MIME sniffing,
+# language detection/tree-sitter parsing for maximum speed
+# No Git commit metadata (author, date, hash), Base64 decoding, MIME, or language metadata in findings
+kingfisher scan /path/to/repo --turbo
+
 # Scan using a rule family
 kingfisher scan /path/to/repo --rule kingfisher.aws
 
@@ -474,6 +530,12 @@ kingfisher scan azure --organization my-org
 # Scan Jira issues
 KF_JIRA_TOKEN="token" kingfisher scan jira --url https://jira.company.com \
   --jql "project = TEST AND status = Open"
+
+# Scan Jira issues, comments, and changelog entries
+KF_JIRA_TOKEN="token" kingfisher scan jira --url https://jira.company.com \
+  --jql "project = TEST AND status = Open" \
+  --include-comments \
+  --include-changelog
 
 # Scan Confluence pages
 KF_CONFLUENCE_TOKEN="token" kingfisher scan confluence --url https://confluence.company.com \
@@ -600,7 +662,7 @@ kingfisher scan /tmp/repo --branch feature-1 \
 
 # Lineage and Evolution
 
-Kingfisher began as an internal fork of Nosey Parker, used as a high-performance foundation for secret detection. 
+Kingfisher began as an internal fork of [Nosey Parker](https://github.com/praetorian-inc/noseyparker), used as a high-performance foundation for secret detection. 
 
 Since then it has evolved far beyond that starting point, introducing live validation, hundreds of new rules, additional scan targets, and major architectural changes across nearly every subsystem.
 
@@ -610,7 +672,7 @@ Since then it has evolved far beyond that starting point, introducing live valid
 - **Baseline management** to suppress known findings over time  
 - **Tree-sitter parsing** layered on Hyperscan for language-aware detection  
 - **More scan targets** (GitLab, Bitbucket, Gitea, Jira, Confluence, Slack, S3, GCS, Docker, Hugging Face, etc.)  
-- **Compressed Files** scanning support added
+- **Compressed Files**, **SQLite database**, and **Python bytecode (.pyc)** scanning support
 - **New storage model** (in-memory + Bloom filter, replacing SQLite)  
 - **Unified workflow** with JSON/BSON/SARIF outputs  
 - **Cross-platform builds** for Linux, macOS, and Windows
