@@ -26,6 +26,9 @@ rules:
                 - "keyInvalid"
                 - "API_KEY_INVALID"
                 - "forbidden"
+                - "PERMISSION_DENIED"
+                - "SERVICE_DISABLED"
+                - "accessNotConfigured"
               match_all_words: false
               negative: true
             - type: JsonValid
